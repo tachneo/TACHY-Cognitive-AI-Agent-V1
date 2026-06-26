@@ -1,0 +1,14 @@
+# TACHY Cognitive Brain OS V1 — core runtime
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7
+pydantic-settings>=2.3
+SQLAlchemy>=2.0
+PyMySQL>=1.1            # MySQL driver (swap for psycopg[binary] if PostgreSQL)
+python-dotenv>=1.0
+httpx>=0.27            # LLM provider calls
+
+# optional (enable as phases land)
+# redis>=5.0           # working memory
+# sentence-transformers # semantic/vector memory
+# alembic>=1.13         # migrations
