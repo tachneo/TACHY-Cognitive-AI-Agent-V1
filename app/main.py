@@ -38,7 +38,7 @@ def identity() -> dict:
 # ── Routes ──────────────────────────────────────────────────────
 from app.api import (  # noqa: E402
     routes_agent, routes_approval, routes_chat, routes_decision,
-    routes_memory, routes_projects, routes_reflection,
+    routes_memory, routes_projects, routes_reflection, routes_tody,
 )
 
 app.include_router(routes_chat.router)
@@ -48,3 +48,4 @@ app.include_router(routes_approval.router)
 app.include_router(routes_reflection.router)
 app.include_router(routes_projects.router)
 app.include_router(routes_agent.router)
+app.include_router(routes_tody.router)

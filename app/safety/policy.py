@@ -29,6 +29,8 @@ HIGH_RISK_ACTIONS = {
     "production_deploy", "db_modify", "delete_files", "send_email",
     "send_message", "access_secrets", "change_payment_or_fees",
     "disable_security", "run_shell_command",
+    # Outbound TODY actions (Phase 1D) — public/social side effects.
+    "create_post",
 }
 
 FORBIDDEN_ACTIONS = {

@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     safety_enforce: bool = True
     high_risk_require_approval: bool = True
 
+    # TODY integration (Phase 1D). Credentials live only in .env (gitignored).
+    tody_api_base: str = "https://api.tody.in/api"
+    tody_email: str = ""
+    tody_password: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:
