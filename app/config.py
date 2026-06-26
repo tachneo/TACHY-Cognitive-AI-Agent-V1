@@ -22,8 +22,9 @@ class Settings(BaseSettings):
     guardian_name: str = "Rohit Kumar"
     company_name: str = "TACHY EDTECH PRIVATE LIMITED"
 
-    # Database
-    db_url: str = "mysql+pymysql://USER:PASSWORD@127.0.0.1:3306/tachy_brain"
+    # Database — SQLite by default so the brain runs with zero setup.
+    # In production set DB_URL to MySQL/PostgreSQL in .env.
+    db_url: str = "sqlite:///storage/tachy_brain.db"
 
     # LLM provider (modular)
     llm_provider: str = "anthropic"

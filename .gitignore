@@ -5,3 +5,7 @@ __pycache__/
 storage/logs/*.log
 *.sqlite3
 .DS_Store
+
+# runtime data
+storage/*.db
+storage/*.sqlite*

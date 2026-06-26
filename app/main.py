@@ -5,13 +5,24 @@ Memory / decision / approval / reflection routes mount as their phases land.
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.brain import identity_core
 from app.config import get_settings
+from app.db.models import init_db
 
 settings = get_settings()
-app = FastAPI(title=settings.app_name, version="1.0.0-phase1a")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()  # create tables on first run (SQLite dev / fresh DB)
+    yield
+
+
+app = FastAPI(title=settings.app_name, version="1.1.0-phase1b", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -25,6 +36,15 @@ def identity() -> dict:
 
 
 # ── Routes ──────────────────────────────────────────────────────
-from app.api import routes_chat  # noqa: E402
+from app.api import (  # noqa: E402
+    routes_agent, routes_approval, routes_chat, routes_decision,
+    routes_memory, routes_projects, routes_reflection,
+)
 
 app.include_router(routes_chat.router)
+app.include_router(routes_memory.router)
+app.include_router(routes_decision.router)
+app.include_router(routes_approval.router)
+app.include_router(routes_reflection.router)
+app.include_router(routes_projects.router)
+app.include_router(routes_agent.router)

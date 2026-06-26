@@ -1,0 +1,28 @@
+"""Shared test fixtures.
+
+Every test runs against a throwaway SQLite DB so the suite never touches the
+dev or production database.
+"""
+import os
+import tempfile
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def temp_db(monkeypatch):
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    monkeypatch.setenv("DB_URL", f"sqlite:///{path}")
+
+    from app.config import get_settings
+    get_settings.cache_clear()
+
+    import app.db.models as models
+    models._engine = None
+    models.SessionLocal = None
+    models.init_db()
+
+    yield
+
+    os.remove(path)
