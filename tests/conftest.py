@@ -18,6 +18,11 @@ def temp_db(monkeypatch):
     monkeypatch.setenv("INTERNAL_API_KEY", "")
     monkeypatch.setenv("TODY_SUPERVISED_AUTO_REPLY", "false")
     monkeypatch.setenv("TODY_WORKER_LIVE_CONFIRM", "")
+    # Hermetic LLM: force the offline heuristic provider so tests never make
+    # real network calls (production .env has HF creds configured).
+    monkeypatch.setenv("LLM_PROVIDER", "heuristic")
+    monkeypatch.setenv("LLM_API_KEY", "")
+    monkeypatch.setenv("HF_TOKEN", "")
     # Keep per-run state files out of the production storage/ tree.
     monkeypatch.setenv("EMOTION_MOOD_PATH", path + ".mood.json")
     monkeypatch.setenv("WEB_LEARNING_STATE_PATH", path + ".topics.json")

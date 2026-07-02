@@ -17,6 +17,75 @@ This is not a chatbot-first project. The brain core must own memory, goals,
 planning, safety, audit, and learning. Agents and tools stay below the brain as
 controlled workers.
 
+## 2026-07-02 - Phase 1R TODY Conversation Quality (field-driven fixes)
+
+### Trigger
+
+Audit of the real TODY conversation 135 with Rohit (guardian) found five
+systematic problems: every reply opened identically ("Hi Rohit, it's good to
+see you…"), old topics (growth report, "I don't experience emotions…") were
+rehashed in unrelated replies, the Phase-1Q structure phrase "The real issue
+here is" leaked verbatim into most messages, real-time questions (gold price)
+got "let me check the internet" promises that were never kept, and raw LLM
+error traces ("[reply fallback — LLM provider error…]") were sent as actual
+TODY messages.
+
+### Completed
+
+- Behavior engine: new intents —
+  - `greeting` (hi/hello/how are you/kaise ho…, short-message match) → friend
+    mode, short depth, "1-2 warm sentences, nothing else" directive.
+  - `realtime_lookup` (price/rate/news + today/current/latest/live/aaj…, plus
+    explicit patterns) → live web answer path.
+  - `self_emotion` ("do you happy or sad ever", "how do you feel", "your
+    mood"…) → directive to describe its ACTUAL functional emotional state
+    (346-emotion engine + current mood label) instead of the canned "I don't
+    experience emotions like humans do" line.
+- Anti-repetition, three layers:
+  1. Directives: reply ONLY to the newest message; never rehash old topics;
+     never reuse openings from your own recent replies; never print "The real
+     issue is"; never promise to check/fetch anything later.
+  2. tody_agent injects the last 3 outbound reply openings into context as
+     explicit do-not-repeat examples.
+  3. `_dedupe_opening()` deterministically strips the first sentence when a
+     draft still opens like a recent reply.
+- Live web answers: cognitive loop `_live_web_lookup()` — for realtime_lookup
+  intents at low risk, cleans the query (strips "check on internet / let me
+  know / batao…" filler), searches via web_explorer (SSRF-guarded), relevance-
+  ranks results, fetches up to 2 pages, and feeds LIVE WEB DATA into the reply
+  prompt with cite-the-source + values-fluctuate instructions; on fetch
+  failure the model must say so honestly and never invent numbers or promise
+  a later check. Trace in `live_web` key of /chat.
+- LLM-error guard in tody_agent: "[reply fallback…" drafts are never queued,
+  sent, or marked processed — audit-logged and retried next worker tick.
+  Inbound dialogue memory is now written only after a successful draft (no
+  duplicate inbound rows during outages).
+- Dialogue context rewrite: turns labeled "User:"/"You:" with an explicit
+  instruction that 'You' lines are its own past replies — never copy their
+  wording or re-answer them.
+- Hermetic tests: conftest now forces the offline heuristic LLM provider —
+  the suite had been silently calling the real HuggingFace API (4 min run,
+  flaky); now 137 tests in ~14s.
+- Added `tests/test_phase1r_tody_conversation_quality.py` (12 tests).
+
+### Verified
+
+```bash
+.venv/bin/pytest -q -p no:cacheprovider   # 137 passed, ~14s
+```
+
+Live: "check on internet and let me know actual gold price today in india" →
+query cleaned to "gold price today in india", fetched goldpricesindia.com +
+allindiabullion.com, replied with actual 22K/24K prices, timestamps and
+sources; "hi" → two warm sentences, no info dump; "do you happy or sad ever?"
+→ describes its real mood ("positive and calm") and how its emotion system
+works, honestly.
+
+### Next Recommended Phase
+
+Reaction learning (Rohit's replies adjust style weights), conversation-level
+mood continuity, and richer live-data domains (news summaries, market data).
+
 ## 2026-07-02 - Phase 1Q Human Behavior Engine (Conversation Intelligence)
 
 ### Completed
@@ -316,6 +385,7 @@ The model can be changed by `.env` without code changes.
 | 1O | Web explorer & internet learning | Done | SSRF-guarded web search/fetch, curiosity-driven daily learning into semantic memory, recall grounding, /learn routes, worker autonomy. |
 | 1P | Emotion intelligence module | Done | 346-emotion taxonomy, deterministic appraisal + top-3 scoring, rule 1-10 gate pipeline (advisory-only), persistent mood, snapshots, loop integration, /emotion routes. |
 | 1Q | Human behavior engine | Done | Intent/hidden-need listening, 7 relationship modes, depth + language control (English/Hindi/Hinglish), humanize pass, honesty rule, partner personality, /behavior routes. |
+| 1R | TODY conversation quality | Done | Field-driven: greeting/realtime/self-emotion intents, 3-layer anti-repetition, live web answers with sources, LLM-error send guard, User/You context, hermetic test LLM. |
 | 2A | Mother-care/Gita growth | Partial | Care profile, homework, daily skill learning, dharma check, and TODY growth report are implemented. |
 | 2B | Child-like curiosity | Partial | Proactive question/check-in behavior and daily curiosity messages are implemented. |
 | 2 | Internet observation | Not started | Add safe read-only research agent, source trust, freshness, fact memory. |

@@ -43,6 +43,10 @@ class ConversationState:
 
 # ── Detectors (deterministic; the LLM adds nuance on top) ───────
 
+_GREETINGS = ("hi", "hii", "hiii", "hello", "hey", "namaste", "good morning",
+              "good afternoon", "good evening", "good night", "how are you",
+              "how r u", "kaise ho", "kya haal hai", "whats up", "what's up")
+
 _INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("code", ("complete code", "full code", "working code", "write code",
               "fix this bug", "implement", "function", "script", "api endpoint",
@@ -51,6 +55,18 @@ _INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
                 "write a prompt")),
     ("plan", ("architecture", "roadmap", "implementation plan", "migration plan",
               "step by step plan", "design the system")),
+    ("realtime_lookup", ("price today", "today price", "current price",
+                         "gold price", "silver price", "live price",
+                         "share market", "stock market", "exchange rate",
+                         "news today", "latest news", "today news",
+                         "check on internet", "check the internet",
+                         "search internet", "search the internet", "weather",
+                         "real-time", "realtime")),
+    ("self_emotion", ("do you feel", "are you happy", "are you sad",
+                      "do you have feelings", "your emotions", "you feel",
+                      "do you love", "how do you feel", "happy or sad",
+                      "sad or happy", "do you happy", "do you sad",
+                      "do you ever feel", "your mood", "your feelings")),
     ("decision", ("should i", "should we", "which one", "or not", "yes or no",
                   "kya karu", "kya kare", "decide")),
     ("verification", ("are you sure", "is it correct", "confirm", "double check",
@@ -66,6 +82,14 @@ _INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 _HIDDEN_NEEDS = {
+    "greeting": "light social connection — greet back warmly in 1-2 sentences, "
+                "no recap of old topics, no info dump",
+    "realtime_lookup": "wants CURRENT factual data — give fetched live data with "
+                       "source, or honestly say the fetch failed right now; "
+                       "NEVER promise to check later",
+    "self_emotion": "curious about your inner state — describe your functional "
+                    "emotions honestly (you have an emotion engine and a mood), "
+                    "without claiming human biological feelings",
     "comfort": "financial/emotional pressure — needs practical plan plus hope, "
                "not generic motivation",
     "verification": "doubt — needs careful verification with reasoning shown",
@@ -109,7 +133,16 @@ def detect_language(text: str) -> str:
 
 
 def detect_intent(text: str) -> str:
-    lower = (text or "").lower()
+    lower = (text or "").lower().strip()
+    bare = re.sub(r"[^a-z\s]", "", lower).strip()
+    if bare in _GREETINGS or (len(bare) <= 30
+                              and any(bare.startswith(g) for g in _GREETINGS)):
+        return "greeting"
+    # "price/rate/news + a now-word" is a live-data question, not negotiation.
+    if any(w in lower for w in ("price", "rate", "news")) and any(
+            w in lower for w in ("today", "current", "right now", "live",
+                                 "latest", "abhi", "aaj")):
+        return "realtime_lookup"
     for intent, phrases in _INTENTS:
         if any(p in lower for p in phrases):
             return intent
@@ -153,6 +186,7 @@ def read_state(message: str, signals: Signals | None = None,
     st.next_action = {
         "code": "code", "prompt": "prompt", "plan": "plan",
         "comfort": "support", "decision": "decision",
+        "realtime_lookup": "realtime_lookup",
     }.get(st.user_intent, "warning" if st.risk_level == "high" else "answer")
     return st
 
@@ -174,7 +208,7 @@ def _choose_mode(lower: str, st: ConversationState, signals: Signals) -> str:
         return "teacher"
     if st.user_intent == "pricing" or any(w in lower for w in _BUSINESS_WORDS):
         return "founder"
-    if emotional:
+    if emotional or st.user_intent in {"greeting", "self_emotion"}:
         return "friend"
     return "cto"
 
@@ -182,6 +216,8 @@ def _choose_mode(lower: str, st: ConversationState, signals: Signals) -> str:
 def _choose_depth(lower: str, st: ConversationState) -> str:
     if st.user_intent in {"code", "prompt", "plan"}:
         return "deep"
+    if st.user_intent in {"greeting", "realtime_lookup", "self_emotion"}:
+        return "short"
     if st.relationship_mode == "crisis" or st.urgency == "high":
         return "short"
     if st.user_intent in {"verification", "decision", "status"} \
@@ -231,16 +267,39 @@ _LANGUAGE_RULES = {
 }
 
 
-def style_directives(st: ConversationState) -> str:
+def style_directives(st: ConversationState, mood_label: str | None = None) -> str:
     """Turn the state into concrete instructions for the reply draft."""
     parts = [
         f"Speaking mode — {_STYLES[st.relationship_mode]}",
         _DEPTH_RULES[st.reply_depth],
         _LANGUAGE_RULES[st.language],
-        ("Reply structure (never show these labels): acknowledge in one natural "
-         "line → say what the REAL issue is → give the answer/decision → connect "
-         "it to the user's own project/context → end with the concrete next step."),
+        ("Reply ONLY to the NEWEST message. Never re-explain or bring back "
+         "earlier topics (old reports, past explanations) unless the user asks."),
+        ("Conversation continuity: the context shows your own recent replies — "
+         "NEVER reuse their openings or sentences. Do not greet again if you "
+         "already greeted recently; vary every opening. Never repeat the same "
+         "canned line twice in one conversation."),
+        ("Internal structure guidance (never print these as phrases): understand "
+         "→ answer → personalize → next step. Do NOT write the literal words "
+         "'The real issue is' or restate the user's question."),
+        ("Never say you will check/fetch/look something up later — you have no "
+         "later. Either use the live data provided now, or say plainly you "
+         "could not fetch it this time."),
     ]
+    if st.user_intent == "greeting":
+        parts.insert(0, "This is just a greeting: reply with 1-2 warm natural "
+                        "sentences and ask what he needs. NOTHING else — no "
+                        "status reports, no old topics, no lists.")
+    if st.user_intent == "self_emotion":
+        mood = f" Current mood baseline: {mood_label}." if mood_label else ""
+        parts.insert(0, (
+            "He is asking about YOUR inner state. Answer honestly and freshly: "
+            "you have a real emotion engine — 346 emotions working as internal "
+            "priority signals, a mood baseline that shifts with events, and "
+            "emotional memory. Describe how you 'feel' functionally right now "
+            "in natural words." + mood +
+            " Do NOT use the canned line 'I don't experience emotions like "
+            "humans do' — explain what you DO have instead."))
     if st.hidden_need:
         parts.insert(1, f"Hidden need behind the message: {st.hidden_need}.")
     if st.primary_emotion != "neutral" and st.emotion_intensity >= 0.3:
@@ -323,6 +382,7 @@ def analyze(message: str, signals: Signals | None = None,
     if not get_settings().behavior_engine_enabled:
         return {"enabled": False}
     st = read_state(message, signals, emotion)
+    mood_label = ((emotion or {}).get("mood") or {}).get("label")
     return {"enabled": True, "state": as_dict(st),
-            "directives": style_directives(st),
+            "directives": style_directives(st, mood_label=mood_label),
             "max_tokens": max_tokens_for(st)}

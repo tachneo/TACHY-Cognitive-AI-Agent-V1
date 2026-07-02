@@ -8,6 +8,7 @@ This is the Phase-1D guardrail before any TODY automation.
 from __future__ import annotations
 
 import json
+import re
 
 from app.brain.attention_system import Signals
 from app.brain.cognitive_loop import process
@@ -67,6 +68,35 @@ def request_send(conversation_id: int, body: str) -> dict:
             "note": "Message will send only after this approval is approved."}
 
 
+def _recent_reply_openings(conversation_id: int, limit: int = 3) -> list[str]:
+    """First ~60 chars of the brain's last few outbound replies — used to stop
+    the model from opening every message the same way."""
+    turns = dialogue_memory.recall_dialogue(conversation_id, limit=12)
+    openings: list[str] = []
+    for turn in turns:  # newest first
+        title = turn.get("title", "")
+        if ":draft_outbound" in title or title.endswith("draft_outbound"):
+            opening = (turn.get("content") or "").strip()[:60]
+            if opening and opening not in openings:
+                openings.append(opening)
+        if len(openings) >= limit:
+            break
+    return openings
+
+
+def _dedupe_opening(reply: str, recent_openings: list[str]) -> str:
+    """If the draft still opens like a recent reply, drop its first sentence —
+    a deterministic cure for 'Hi Rohit, it's good to see you' on every message."""
+    head = reply.strip()[:25].casefold()
+    if not head or not any(o.casefold().startswith(head) for o in recent_openings):
+        return reply
+    parts = re.split(r"(?<=[.!?])\s+", reply.strip(), maxsplit=1)
+    if len(parts) == 2 and len(parts[1]) > 20:
+        rest = parts[1]
+        return rest[:1].upper() + rest[1:]
+    return reply
+
+
 def draft_reply_to_message(
     conversation_id: int,
     message: str,
@@ -89,15 +119,13 @@ def draft_reply_to_message(
     if is_guardian:
         relationship_memory.ensure_guardian_relationship()
     context = dialogue_memory.identity_context(conversation_id, person=person)
-    dialogue_memory.remember_turn(
-        channel="tody",
-        conversation_id=conversation_id,
-        direction="inbound",
-        body=message,
-        person=person,
-        importance=10 if is_guardian else 6,
-        message_id=str(message_id) if message_id is not None else None,
-    )
+    recent_openings = _recent_reply_openings(conversation_id)
+    if recent_openings:
+        context += (
+            "\nYour own recent reply openings — do NOT start like any of these "
+            "again, vary completely: "
+            + " | ".join(f'"{o}"' for o in recent_openings)
+        )
     brain = process(
         message,
         Signals(
@@ -108,6 +136,31 @@ def draft_reply_to_message(
         context=context,
     )
     reply = brain["reply"]
+    if reply.lstrip().startswith("[reply fallback"):
+        # LLM/provider error: never send internal error traces to TODY.
+        # Leave the message unprocessed so the worker retries next tick.
+        log_event(
+            "tody_reply_llm_error",
+            detail=f"conversation_id={conversation_id}; message_id={message_id}",
+            risk_tier="low",
+        )
+        return {
+            "processed": False,
+            "llm_error": True,
+            "conversation_id": conversation_id,
+            "message_id": message_id,
+            "reason": "LLM provider error; reply suppressed, will retry",
+        }
+    reply = _dedupe_opening(reply, recent_openings)
+    dialogue_memory.remember_turn(
+        channel="tody",
+        conversation_id=conversation_id,
+        direction="inbound",
+        body=message,
+        person=person,
+        importance=10 if is_guardian else 6,
+        message_id=str(message_id) if message_id is not None else None,
+    )
     dialogue_memory.remember_turn(
         channel="tody",
         conversation_id=conversation_id,

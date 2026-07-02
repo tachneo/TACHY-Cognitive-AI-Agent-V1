@@ -90,7 +90,8 @@ def summarize_conversation(conversation_id: int | str, limit: int = 12) -> dict:
     snippets = []
     for turn in reversed(turns[-limit:]):
         direction = turn["title"].split(":")[2] if ":" in turn["title"] else "turn"
-        snippets.append(f"{direction}: {turn['content'][:120]}")
+        role = "User" if direction == "inbound" else "You"
+        snippets.append(f"{role}: {turn['content'][:120]}")
     summary = " | ".join(snippets)[:1500]
     return {
         "conversation_id": str(conversation_id),
@@ -104,5 +105,8 @@ def identity_context(conversation_id: int | str, person: str | None = None) -> s
     who = person or "unknown user"
     return (
         f"You are TACHY Cognitive AI continuing a TODY conversation with {who}. "
-        f"Conversation ID: {conversation_id}. Recent context: {summary['summary']}"
+        f"Conversation ID: {conversation_id}. Recent turns (oldest→newest; "
+        f"'You' lines are YOUR OWN past replies — never copy their wording or "
+        f"re-answer them, reply only to the newest User message): "
+        f"{summary['summary']}"
     )
