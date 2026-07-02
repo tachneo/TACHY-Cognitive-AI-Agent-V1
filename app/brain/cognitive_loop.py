@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
-from app.brain import (emotion_engine, identity_core, interest_system,
-                       need_system, self_review)
+from app.brain import (behavior_engine, emotion_engine, identity_core,
+                       interest_system, need_system, self_review)
 from app.brain.attention_system import Signals, attention_band, priority_score
 from app.brain.decision_engine import as_dict as decision_dict
 from app.brain.decision_engine import decide
@@ -55,9 +55,12 @@ def process(message: str, signals: Signals | None = None,
     dharma = dharma_check(decision_d.get("action", message),
                           risk_tier=decision_d.get("risk_tier", "low"))
 
-    # ACTION (LLM reply, grounded by the decision + recalled memory + emotion)
+    # BEHAVIOR — understand the person behind the message (Phase 1Q)
+    behavior = behavior_engine.analyze(message, signals, emotion)
+
+    # ACTION (LLM reply, grounded by decision + memory + emotion + behavior)
     reply = _draft_reply(message, band, decision_d, context=context, dharma=dharma,
-                         emotion=emotion)
+                         emotion=emotion, behavior=behavior)
 
     # REVIEW
     review = self_review.review(message=message, reply=reply, decision=decision_d)
@@ -81,6 +84,7 @@ def process(message: str, signals: Signals | None = None,
         "decision": decision_d,
         "dharma": dharma,
         "emotion": emotion,
+        "behavior": behavior,
         "reply": reply,
         "feedback": feedback,
         "self_review": review,
@@ -91,7 +95,8 @@ def process(message: str, signals: Signals | None = None,
 def _draft_reply(message: str, band: str, decision: dict,
                  context: str | None = None,
                  dharma: dict | None = None,
-                 emotion: dict | None = None) -> str:
+                 emotion: dict | None = None,
+                 behavior: dict | None = None) -> str:
     """Generate the reply through the configured LLM provider, grounded by the
     decision trace. Falls back to the heuristic provider when no key is set."""
     recalled = decision.get("recalled", [])
@@ -127,11 +132,23 @@ def _draft_reply(message: str, band: str, decision: dict,
         f"Bhagavad Gita dharma check:\n{dharma or {}}\n\n"
         + emotion_block
         + f"Chosen approach: {decision['chosen']}\n"
-        "Write a concise, practical reply with a clear next step. Adapt tone to "
-        "learned preferences, but do not fake certainty or claim actions were done."
     )
+    max_tokens = 800
+    if behavior and behavior.get("enabled"):
+        system = behavior_engine.SYSTEM_PERSONALITY
+        prompt += ("\nHow to speak for THIS message:\n"
+                   + behavior["directives"] + "\n")
+        max_tokens = behavior["max_tokens"]
+    else:
+        system = _SYSTEM_PROMPT
+        prompt += ("Write a concise, practical reply with a clear next step. "
+                   "Adapt tone to learned preferences, but do not fake certainty "
+                   "or claim actions were done.")
     try:
-        return get_provider().complete(_SYSTEM_PROMPT, prompt)
+        reply = get_provider().complete(system, prompt, max_tokens=max_tokens)
+        if behavior and behavior.get("enabled"):
+            reply = behavior_engine.humanize(reply)
+        return reply
     except Exception as exc:  # never let an LLM/network error break the loop
         return (
             f"[reply fallback — LLM provider error: {type(exc).__name__}]\n"

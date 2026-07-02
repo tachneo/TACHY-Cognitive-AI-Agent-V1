@@ -17,6 +17,69 @@ This is not a chatbot-first project. The brain core must own memory, goals,
 planning, safety, audit, and learning. Agents and tools stay below the brain as
 controlled workers.
 
+## 2026-07-02 - Phase 1Q Human Behavior Engine (Conversation Intelligence)
+
+### Completed
+
+- Added `app/brain/behavior_engine.py` — the conversation layer that makes the
+  brain speak like a partner/mentor/co-founder, not a chatbot. Core principle:
+  don't just answer the message, understand the person behind it.
+  - LISTENING: intent detection (code/prompt/plan/decision/verification/
+    pricing/comfort/status/learning) + hidden-need mapping ("no money, salary
+    pending" → practical plan plus hope, not generic motivation; "are you
+    sure" → careful verification with reasoning; "complete code" →
+    ready-to-use output, no theory).
+  - Relationship-mode selection with precedence crisis > motivator > auditor >
+    teacher > founder > friend > cto, driven by urgency, risk, emotion
+    intensity (Phase 1P feed), and domain keywords.
+  - Reply-depth control (short/medium/deep) driving max_tokens (300/600/1400):
+    crisis/urgent/yes-no → short; pricing/teaching → medium; code/prompt/
+    architecture → deep.
+  - Language detection: English / Hindi (Devanagari) / Hinglish (Roman-Hindi
+    word lexicon) — reply mirrors the user's language.
+  - Style directives per mode (7 speaking styles from the spec) + the natural
+    reply structure (acknowledge → real issue → answer → personalize →
+    action) injected into the LLM prompt, labels never shown.
+  - `humanize()` post-pass strips robotic phrases ("As an AI language model",
+    "I hope this message finds you well", "Certainly, here is", "It is
+    important to note", "In conclusion", …) even if the model slips.
+  - New SYSTEM_PERSONALITY: warm, direct, loyal, practical, emotionally aware,
+    business-minded, honest, protective, action-oriented; disagree
+    respectfully; admit uncertainty; no fake flattery/emotion/manipulation.
+  - HONESTY RULE (spec ethics): natural and warm, but never claims to be a
+    biological human — answers truthfully when asked. Verified live.
+- Cognitive loop: BEHAVIOR stage after decision/dharma; behavior directives +
+  depth-based max_tokens shape the reply; humanize() applied to output;
+  `behavior` trace returned by /chat (internal conversation state JSON:
+  intent, hidden_need, emotions, urgency, risk, mode, depth, language,
+  next_action).
+- New routes (X-API-Key): `POST /behavior/analyze` (state + directives, with
+  emotion appraisal exactly as the loop sees it), `GET /behavior/styles`.
+- Kill switch: `BEHAVIOR_ENGINE_ENABLED` (off → legacy prompt path).
+- Added `tests/test_phase1q_behavior_engine.py` (17 tests: listening/hidden
+  needs, all 7 mode selections, language detection, directive content,
+  humanize removal + preservation, honesty rule, kill switch, loop trace,
+  routes). Fixed humanize() to leave untouched drafts byte-identical
+  (a Phase-1J test caught unconditional capitalization).
+
+### Verified
+
+```bash
+.venv/bin/pytest -q -p no:cacheprovider   # 126 passed
+```
+
+Live: Hinglish money-stress message → friend mode, short depth, natural
+Hinglish supportive reply with concrete steps; "are you a real human?" →
+truthful AI disclosure in partner tone; client-pricing message → founder mode
+with value reframing and a ready-to-send reply. TODY replies inherit all of
+this via the shared cognitive loop.
+
+### Next Recommended Phase
+
+Per-conversation behavior continuity (mode/language stickiness across a TODY
+session), reaction learning (user's response adjusts style weights), and the
+training-dataset format (spec item 17) for future fine-tuning.
+
 ## 2026-07-02 - Phase 1P Emotion Intelligence Module
 
 ### Completed
@@ -252,6 +315,7 @@ The model can be changed by `.env` without code changes.
 | 1N | Hugging Face LLM provider | Partial | Qwen 72B through Hugging Face router is configured as the lower-cost LLM path. |
 | 1O | Web explorer & internet learning | Done | SSRF-guarded web search/fetch, curiosity-driven daily learning into semantic memory, recall grounding, /learn routes, worker autonomy. |
 | 1P | Emotion intelligence module | Done | 346-emotion taxonomy, deterministic appraisal + top-3 scoring, rule 1-10 gate pipeline (advisory-only), persistent mood, snapshots, loop integration, /emotion routes. |
+| 1Q | Human behavior engine | Done | Intent/hidden-need listening, 7 relationship modes, depth + language control (English/Hindi/Hinglish), humanize pass, honesty rule, partner personality, /behavior routes. |
 | 2A | Mother-care/Gita growth | Partial | Care profile, homework, daily skill learning, dharma check, and TODY growth report are implemented. |
 | 2B | Child-like curiosity | Partial | Proactive question/check-in behavior and daily curiosity messages are implemented. |
 | 2 | Internet observation | Not started | Add safe read-only research agent, source trust, freshness, fact memory. |

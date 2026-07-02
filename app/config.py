@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     tody_email: str = ""
     tody_password: str = ""
 
+    # Behavior engine (Phase 1Q) — human conversation layer.
+    behavior_engine_enabled: bool = True
+
     # Emotion engine (Phase 1P) — emotions as internal priority signals.
     emotion_engine_enabled: bool = True
     emotion_snapshot_threshold: float = 0.6
