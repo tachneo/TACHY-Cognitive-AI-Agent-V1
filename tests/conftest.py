@@ -18,6 +18,9 @@ def temp_db(monkeypatch):
     monkeypatch.setenv("INTERNAL_API_KEY", "")
     monkeypatch.setenv("TODY_SUPERVISED_AUTO_REPLY", "false")
     monkeypatch.setenv("TODY_WORKER_LIVE_CONFIRM", "")
+    # Keep per-run state files out of the production storage/ tree.
+    monkeypatch.setenv("EMOTION_MOOD_PATH", path + ".mood.json")
+    monkeypatch.setenv("WEB_LEARNING_STATE_PATH", path + ".topics.json")
 
     from app.config import get_settings
     get_settings.cache_clear()
@@ -30,3 +33,6 @@ def temp_db(monkeypatch):
     yield
 
     os.remove(path)
+    for suffix in (".mood.json", ".topics.json"):
+        if os.path.exists(path + suffix):
+            os.remove(path + suffix)

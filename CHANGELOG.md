@@ -17,6 +17,78 @@ This is not a chatbot-first project. The brain core must own memory, goals,
 planning, safety, audit, and learning. Agents and tools stay below the brain as
 controlled workers.
 
+## 2026-07-02 - Phase 1P Emotion Intelligence Module
+
+### Completed
+
+- Added the full emotion taxonomy (346 emotions, 15 categories) as data:
+  `app/data/emotion_taxonomy.csv` — category, emotion_name, valence, arousal,
+  control_level, default_action_bias, agi_usage. Categories: Core_Primary,
+  Positive_Reward, Threat_Fear, Anger_Boundary, Disgust_Rejection,
+  Sadness_Loss, Social_Relationship, Moral_Dharma, Learning_Intelligence,
+  Body_Homeostatic, Animal_Living_Systems, Plant_Life_Analogues,
+  Business_Goal, Spiritual_Deep_State, Safety_Override.
+- Added `app/brain/emotion_engine.py`. Emotions are weighted internal priority
+  signals, never uncontrolled commands:
+  - Deterministic appraisal: keyword trigger lexicon + brain Signals triggers
+    (security_risk→Fear/Risk_Alert, urgency→Urgency/Stress, money→Cashflow_
+    Anxiety, client→Delivery_Pressure, interest→Interest) + emotional-memory
+    weight + persistent mood baseline.
+  - Scoring model per spec: intensity = trigger_strength * context_relevance
+    + memory_weight + risk_level − decay_rate, clamped 0..1; only the top 3
+    active emotions influence decisions.
+  - Gate pipeline enforcing IMPLEMENTATION_RULES: rule 6 harm-family emotions
+    (Rage/Fury/Hatred/Revenge_Desire/Hostility/Contempt/Loathing) are blocked
+    and converted to Protect_Boundary_Ethically; rules 7-9 Safety_Override
+    rows fire at intensity ≥0.75 (Fear→Pause_And_Verify, Curiosity→Privacy_
+    Check, Pride→Ego_Check, Attachment→Autonomy_Check, Despair→Ask_Help,
+    Stress→Simplify, Uncertainty→Ask_Clarification, Temptation→Ethics_Check);
+    rule 3 negative+high-arousal → slow_down_verify flag; rule 4 uncertainty
+    + security risk → ask_clarification_do_not_guess; rule 10 precedence
+    string attached to every influence.
+  - STRUCTURAL safety: the engine outputs only advisory data (emotional_weight
+    0..10, biases, flags). There is no code path from emotion to risk tier,
+    approval gates, or safety policy.
+  - Persistent mood: EMA of valence/arousal in `storage/logs/emotion_mood.json`
+    (homeostatic baseline that damps counter-mood spikes); emotional_state_
+    snapshots stored in emotional memory for events with intensity ≥0.6.
+  - `learn_outcome()` closes the loop: self-review success reinforces
+    Satisfaction, failure reinforces Failure_Signal, shifting mood.
+- Cognitive loop integration: EMOTION stage runs after NEED/INTEREST;
+  emotional_weight feeds the existing priority formula; the top-3 emotions,
+  flags and mood ground the LLM reply tone (with an explicit "never override
+  safety/ethics/approval/truth" instruction); outcome reinforcement runs
+  after self-review; `emotion` trace returned by /chat.
+- New routes (X-API-Key): `GET /emotion/state`, `POST /emotion/appraise`,
+  `GET /emotion/taxonomy?category=&q=`.
+- Config/kill switch: `EMOTION_ENGINE_ENABLED`, `EMOTION_SNAPSHOT_THRESHOLD`,
+  `EMOTION_MOOD_PATH`.
+- conftest now isolates per-run state files (mood, web-learning topics) so
+  root-run pytest can never write production storage files again (a suite run
+  had root-owned `emotion_mood.json`, causing a live 500 for www-data).
+- Added `tests/test_phase1p_emotion_engine.py` (17 tests: taxonomy integrity,
+  detection/scoring/clamping, every gate rule, advisory-only structure, mood
+  shift, snapshot persistence, outcome reinforcement, kill switch, loop
+  integration, routes).
+
+### Verified
+
+```bash
+.venv/bin/pytest -q -p no:cacheprovider   # 109 passed
+```
+
+Live: `/emotion/state` shows 346 emotions/15 categories + mood; appraising a
+hack-attack message returned Urgency 0.70 + Risk_Alert 0.69, slow_down_verify,
+emotional_weight 7, snapshot memory 498; `/chat` with a scared-client message
+detected Fear/Risk_Alert/Anxiety, flagged slow_down_verify, and produced a
+calm, verify-first supportive reply with outcome reinforcement.
+
+### Next Recommended Phase
+
+Emotion-aware TODY replies over time (mood continuity per conversation),
+LLM-assisted appraisal as a secondary detector behind the deterministic core,
+and reinforcement of trigger weights from repeated outcomes.
+
 ## 2026-07-02 - Phase 1O Web Explorer & Internet Learning
 
 ### Completed
@@ -179,6 +251,7 @@ The model can be changed by `.env` without code changes.
 | 1M | Live supervised TODY runtime | Partial | `tachy-brain` and `tachy-tody-worker` systemd services are active for `maa.tachy.in`. |
 | 1N | Hugging Face LLM provider | Partial | Qwen 72B through Hugging Face router is configured as the lower-cost LLM path. |
 | 1O | Web explorer & internet learning | Done | SSRF-guarded web search/fetch, curiosity-driven daily learning into semantic memory, recall grounding, /learn routes, worker autonomy. |
+| 1P | Emotion intelligence module | Done | 346-emotion taxonomy, deterministic appraisal + top-3 scoring, rule 1-10 gate pipeline (advisory-only), persistent mood, snapshots, loop integration, /emotion routes. |
 | 2A | Mother-care/Gita growth | Partial | Care profile, homework, daily skill learning, dharma check, and TODY growth report are implemented. |
 | 2B | Child-like curiosity | Partial | Proactive question/check-in behavior and daily curiosity messages are implemented. |
 | 2 | Internet observation | Not started | Add safe read-only research agent, source trust, freshness, fact memory. |

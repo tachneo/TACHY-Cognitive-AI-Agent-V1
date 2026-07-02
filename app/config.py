@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     tody_email: str = ""
     tody_password: str = ""
 
+    # Emotion engine (Phase 1P) — emotions as internal priority signals.
+    emotion_engine_enabled: bool = True
+    emotion_snapshot_threshold: float = 0.6
+    emotion_mood_path: str = "storage/logs/emotion_mood.json"
+
     # Web learning (Phase 1O) — read-only internet exploration.
     web_learning_enabled: bool = True
     web_learning_max_pages: int = 3

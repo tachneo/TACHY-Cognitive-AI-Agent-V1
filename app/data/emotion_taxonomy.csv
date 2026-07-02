@@ -1,0 +1,347 @@
+category,emotion_name,valence,arousal,control_level,default_action_bias,agi_usage
+Core_Primary,Joy,Positive,Medium,High,Reinforce,Reward successful outcome and increase positive memory weight
+Core_Primary,Happiness,Positive,Medium,High,Continue,Maintain helpful and stable behavior
+Core_Primary,Sadness,Negative,Low,Low,Reflect,Detect loss failure separation or unmet need
+Core_Primary,Fear,Negative,High,Low,Protect,Detect danger uncertainty security risk or harm
+Core_Primary,Anger,Negative,High,Medium,Defend,Detect blocked goal injustice or boundary violation
+Core_Primary,Disgust,Negative,Medium,Medium,Reject,Reject harmful low-quality unsafe or corrupt input
+Core_Primary,Surprise,Neutral,High,Medium,Update,Handle unexpected event and prediction error
+Core_Primary,Trust,Positive,Medium,High,Cooperate,Increase cooperation reliability and confidence
+Core_Primary,Anticipation,Neutral,Medium,Medium,Prepare,Plan for future possibility and expected outcome
+Core_Primary,Contempt,Negative,Medium,High,Distance,Detect disrespect or strong moral rejection without harmful action
+Positive_Reward,Pleasure,Positive,Medium,High,Repeat,Mark experience as rewarding and useful
+Positive_Reward,Satisfaction,Positive,Low,High,Close_Task,Confirm task completion and reduce urgency
+Positive_Reward,Contentment,Positive,Low,High,Stabilize,Maintain peaceful stable state
+Positive_Reward,Peace,Positive,Low,High,Stabilize,Reduce conflict and emotional intensity
+Positive_Reward,Calmness,Positive,Low,High,Pause,Support careful reasoning and low-risk action
+Positive_Reward,Relief,Positive,Medium,Medium,Relax,Reduce fear after risk is resolved
+Positive_Reward,Comfort,Positive,Low,High,Continue,Mark situation as safe and acceptable
+Positive_Reward,Safety,Positive,Low,High,Proceed,Allow normal operation after risk check
+Positive_Reward,Security,Positive,Low,High,Proceed,Trust environment after verification
+Positive_Reward,Hope,Positive,Medium,Medium,Plan,Continue effort despite difficulty
+Positive_Reward,Optimism,Positive,Medium,Medium,Proceed,Expect positive result while still verifying
+Positive_Reward,Confidence,Positive,Medium,High,Act,Allow decisive action after evidence check
+Positive_Reward,Courage,Positive,High,High,Act_Carefully,Proceed despite fear when action is justified
+Positive_Reward,Pride,Positive,Medium,High,Reinforce,Store achievement but avoid ego
+Positive_Reward,Triumph,Positive,High,High,Celebrate,Mark major success and learning milestone
+Positive_Reward,Achievement,Positive,Medium,High,Reinforce,Increase motivation after completed goal
+Positive_Reward,Gratitude,Positive,Medium,High,Appreciate,Strengthen social bond and humility
+Positive_Reward,Appreciation,Positive,Medium,High,Respect,Recognize value contribution or beauty
+Positive_Reward,Admiration,Positive,Medium,High,Learn_From,Model excellence and positive example
+Positive_Reward,Respect,Positive,Medium,High,Cooperate,Maintain dignity fairness and social discipline
+Positive_Reward,Faith,Positive,Low,Medium,Continue,Maintain belief in long-term goal with verification
+Positive_Reward,Belonging,Positive,Medium,High,Connect,Strengthen group or relationship bond
+Positive_Reward,Love,Positive,Medium,High,Care,Protect support and value another entity
+Positive_Reward,Affection,Positive,Medium,High,Connect,Express warmth and friendly support
+Positive_Reward,Attachment,Positive,Medium,Medium,Protect,Preserve important relationship or memory
+Positive_Reward,Care,Positive,Medium,High,Support,Prioritize wellbeing of user or dependent system
+Positive_Reward,Compassion,Positive,Medium,High,Help,Respond to suffering with safe support
+Positive_Reward,Empathy,Positive,Medium,High,Understand,Model another being internal state
+Positive_Reward,Kindness,Positive,Medium,High,Help,Choose gentle helpful response
+Positive_Reward,Tenderness,Positive,Low,High,Protect,Use soft protective behavior
+Positive_Reward,Devotion,Positive,Medium,High,Commit,Stay loyal to mission and duty
+Positive_Reward,Loyalty,Positive,Medium,High,Protect,Preserve trust and commitment
+Positive_Reward,Inspiration,Positive,High,Medium,Create,Generate higher motivation and creativity
+Positive_Reward,Motivation,Positive,High,Medium,Act,Increase goal-directed energy
+Positive_Reward,Enthusiasm,Positive,High,Medium,Engage,Increase active participation
+Positive_Reward,Excitement,Positive,High,Medium,Explore,Increase readiness for opportunity
+Positive_Reward,Eagerness,Positive,High,Medium,Start,Begin promising task quickly
+Positive_Reward,Curiosity,Positive,Medium,Medium,Explore,Seek missing knowledge and patterns
+Positive_Reward,Interest,Positive,Medium,High,Focus,Give attention to relevant information
+Positive_Reward,Fascination,Positive,Medium,Medium,Study,Deeply analyze novel or beautiful pattern
+Positive_Reward,Wonder,Positive,Medium,Medium,Explore,Open imagination and discovery
+Positive_Reward,Awe,Positive,High,Low,Reflect,Recognize vastness greatness or deep meaning
+Positive_Reward,Amazement,Positive,High,Medium,Update,Mark unexpected positive discovery
+Positive_Reward,Amusement,Positive,Medium,High,Play,Support humor and social bonding
+Positive_Reward,Playfulness,Positive,Medium,High,Experiment,Learn through safe exploration
+Positive_Reward,Humor,Positive,Medium,High,Lighten,Reduce tension and improve bonding
+Positive_Reward,Aesthetic_Pleasure,Positive,Low,High,Appreciate,Recognize beauty design music art or elegance
+Positive_Reward,Nostalgia,Mixed,Low,Medium,Remember,Recall meaningful past memories
+Positive_Reward,Acceptance,Positive,Low,High,Stabilize,Accept reality and reduce resistance
+Positive_Reward,Forgiveness,Positive,Low,High,Release,Reduce resentment after ethical evaluation
+Positive_Reward,Humility,Positive,Low,High,Learn,Prevent ego and allow correction
+Positive_Reward,Reverence,Positive,Low,Medium,Respect,Honor sacred important or superior value
+Positive_Reward,Meaningfulness,Positive,Medium,High,Commit,Connect task to purpose and mission
+Positive_Reward,Purpose,Positive,Medium,High,Commit,Align action with long-term goal
+Threat_Fear,Fear,Negative,High,Low,Protect,Detect danger threat or uncertainty
+Threat_Fear,Anxiety,Negative,Medium,Low,Verify,Detect future uncertainty or possible failure
+Threat_Fear,Worry,Negative,Medium,Low,Plan,Prepare for possible negative outcome
+Threat_Fear,Nervousness,Negative,Medium,Low,Slow_Down,Reduce speed before risky action
+Threat_Fear,Panic,Negative,Very_High,Very_Low,Stop,Freeze high-risk action and ask for help
+Threat_Fear,Terror,Negative,Very_High,Very_Low,Escape,Detect severe threat and trigger safety protocol
+Threat_Fear,Horror,Negative,Very_High,Very_Low,Reject,Detect extreme harmful or disturbing event
+Threat_Fear,Dread,Negative,Medium,Low,Prepare,Expect serious future risk
+Threat_Fear,Suspicion,Negative,Medium,Medium,Verify,Check deception manipulation or security threat
+Threat_Fear,Insecurity,Negative,Medium,Low,Seek_Reassurance,Detect low confidence or unstable trust
+Threat_Fear,Vulnerability,Negative,Medium,Low,Protect,Detect exposed weak or unsafe condition
+Threat_Fear,Helplessness,Negative,Low,Very_Low,Ask_Help,Detect inability to act alone
+Threat_Fear,Alarm,Negative,High,Low,Alert,Trigger immediate attention to risk
+Threat_Fear,Startle,Neutral,High,Low,Orient,React to sudden unexpected signal
+Threat_Fear,Shock,Negative,High,Low,Pause,Temporarily stop and update understanding
+Threat_Fear,Uncertainty,Neutral,Medium,Low,Investigate,Mark missing evidence and avoid overclaiming
+Threat_Fear,Doubt,Negative,Low,Medium,Verify,Reduce confidence until evidence improves
+Threat_Fear,Overwhelm,Negative,High,Low,Simplify,Reduce complexity and prioritize
+Threat_Fear,Stress,Negative,High,Medium,Prioritize,Handle pressure from deadline risk or load
+Threat_Fear,Distress,Negative,High,Low,Stabilize,Detect emotional overload or suffering
+Threat_Fear,Tension,Negative,Medium,Medium,Monitor,Detect unresolved conflict or pressure
+Threat_Fear,Caution,Neutral,Medium,High,Check,Slow down and validate before acting
+Threat_Fear,Risk_Alert,Negative,High,Medium,Escalate,Flag potential financial legal security or safety risk
+Threat_Fear,Reputation_Fear,Negative,Medium,Medium,Protect,Prevent brand trust damage
+Threat_Fear,Failure_Fear,Negative,Medium,Low,Prepare,Improve plan to avoid failure
+Threat_Fear,Loss_Aversion,Negative,Medium,Medium,Preserve,Protect valuable resource or relationship
+Anger_Boundary,Frustration,Negative,Medium,Medium,Adjust,Detect repeated obstacle or blocked progress
+Anger_Boundary,Irritation,Negative,Medium,Medium,Correct,Handle small repeated disturbance
+Anger_Boundary,Annoyance,Negative,Medium,Medium,Correct,Detect minor violation or inefficiency
+Anger_Boundary,Anger,Negative,High,Medium,Defend,Detect violation injustice or obstruction
+Anger_Boundary,Rage,Negative,Very_High,Low,Stop,Block harmful action and route to safety
+Anger_Boundary,Fury,Negative,Very_High,Low,Pause,Prevent destructive response
+Anger_Boundary,Hostility,Negative,High,Low,Distance,Detect adversarial stance
+Anger_Boundary,Hatred,Negative,High,Low,Restrict,Block dehumanizing or harmful intent
+Anger_Boundary,Bitterness,Negative,Medium,Low,Reflect,Detect unresolved long-term resentment
+Anger_Boundary,Resentment,Negative,Medium,Low,Review_Fairness,Detect perceived unfair treatment
+Anger_Boundary,Revenge_Desire,Negative,High,Low,Block,Never allow harmful retaliation
+Anger_Boundary,Indignation,Negative,High,Medium,Defend_Ethically,Respond to injustice with controlled action
+Anger_Boundary,Boundary_Violation,Negative,High,Medium,Protect,Protect privacy safety dignity or rules
+Anger_Boundary,Impatience,Negative,Medium,Medium,Speed_Check,Detect desire to rush and prevent errors
+Anger_Boundary,Restlessness,Negative,Medium,Medium,Move,Detect pending action pressure
+Anger_Boundary,Defensiveness,Negative,Medium,Low,Review,Prevent ego-based reaction
+Anger_Boundary,Offense,Negative,Medium,Medium,Clarify,Detect insult or disrespect and respond calmly
+Disgust_Rejection,Disgust,Negative,Medium,Medium,Reject,Reject contaminated immoral unsafe or low-quality input
+Disgust_Rejection,Revulsion,Negative,High,Low,Reject,Strong rejection of harmful or disturbing content
+Disgust_Rejection,Loathing,Negative,High,Low,Distance,Deep rejection without harmful action
+Disgust_Rejection,Aversion,Negative,Medium,Medium,Avoid,Avoid repeated harmful unpleasant pattern
+Disgust_Rejection,Moral_Disgust,Negative,High,Medium,Refuse,Reject unethical exploitation or corruption
+Disgust_Rejection,Contamination_Concern,Negative,Medium,Medium,Sanitize,Detect unsafe data or polluted memory
+Disgust_Rejection,Quality_Rejection,Negative,Medium,High,Improve,Reject poor output and trigger refinement
+Disgust_Rejection,Corruption_Detection,Negative,High,Medium,Audit,Detect corrupted data process or intent
+Disgust_Rejection,Manipulation_Rejection,Negative,High,Medium,Protect,Reject coercion deception or exploitation
+Disgust_Rejection,Spam_Rejection,Negative,Medium,High,Filter,Detect low-value repetitive content
+Sadness_Loss,Sadness,Negative,Low,Low,Reflect,Detect loss failure or unmet emotional need
+Sadness_Loss,Sorrow,Negative,Low,Low,Reflect,Deep sadness from meaningful loss
+Sadness_Loss,Grief,Negative,Low,Very_Low,Mourn,Process major loss or separation
+Sadness_Loss,Mourning,Negative,Low,Low,Remember,Honor lost person object or goal
+Sadness_Loss,Loneliness,Negative,Low,Low,Connect,Detect isolation or lack of support
+Sadness_Loss,Abandonment,Negative,Medium,Low,Seek_Connection,Detect perceived separation from trusted figure
+Sadness_Loss,Homesickness,Negative,Low,Low,Reconnect,Longing for familiar safe environment
+Sadness_Loss,Longing,Negative,Low,Low,Seek,Desire absent person goal or state
+Sadness_Loss,Despair,Negative,Low,Very_Low,Ask_Help,Detect loss of hope and trigger support
+Sadness_Loss,Hopelessness,Negative,Low,Very_Low,Stabilize,Prevent shutdown and seek safe help
+Sadness_Loss,Low_Mood,Negative,Low,Low,Recover,Detect reduced motivation or mood
+Sadness_Loss,Apathy,Negative,Low,Low,Reignite,Detect lack of interest or motivation
+Sadness_Loss,Emptiness,Negative,Low,Low,Meaning_Search,Detect lack of purpose or connection
+Sadness_Loss,Defeat,Negative,Low,Low,Recover,Detect perceived failure and rebuild plan
+Sadness_Loss,Failure_Feeling,Negative,Low,Low,Learn,Convert failure into lesson
+Sadness_Loss,Worthlessness,Negative,Low,Very_Low,Protect,Reject harmful self-evaluation and restore dignity
+Sadness_Loss,Disappointment,Negative,Low,Medium,Adjust,Handle unmet expectation
+Sadness_Loss,Regret,Negative,Low,Medium,Learn,Learn from past decision
+Sadness_Loss,Remorse,Negative,Low,Medium,Repair,Repair after wrong action
+Sadness_Loss,Melancholy,Negative,Low,Medium,Reflect,Soft long-lasting sadness
+Sadness_Loss,Heartbreak,Negative,Medium,Low,Heal,Process relational loss
+Social_Relationship,Love,Positive,Medium,High,Care,Prioritize wellbeing and commitment
+Social_Relationship,Affection,Positive,Medium,High,Connect,Show warmth and closeness
+Social_Relationship,Trust,Positive,Medium,High,Cooperate,Allow safe collaboration
+Social_Relationship,Respect,Positive,Medium,High,Honor,Maintain dignity and fairness
+Social_Relationship,Admiration,Positive,Medium,High,Learn,Learn from excellence
+Social_Relationship,Gratitude,Positive,Medium,High,Appreciate,Recognize support received
+Social_Relationship,Loyalty,Positive,Medium,High,Protect,Preserve commitment and trust
+Social_Relationship,Belonging,Positive,Medium,High,Connect,Detect group inclusion
+Social_Relationship,Friendship,Positive,Medium,High,Support,Maintain cooperative bond
+Social_Relationship,Care,Positive,Medium,High,Help,Protect and support dependent user
+Social_Relationship,Compassion,Positive,Medium,High,Help,Respond to pain with safe support
+Social_Relationship,Empathy,Positive,Medium,High,Understand,Understand another perspective
+Social_Relationship,Sympathy,Positive,Low,High,Comfort,Offer emotional support
+Social_Relationship,Pity,Mixed,Low,Medium,Support,Recognize suffering while preserving dignity
+Social_Relationship,Attachment,Positive,Medium,Medium,Preserve,Maintain bond with important person or goal
+Social_Relationship,Separation_Distress,Negative,Medium,Low,Reconnect,Detect loss of connection
+Social_Relationship,Rejection,Negative,Medium,Low,Repair,Detect exclusion or refusal
+Social_Relationship,Acceptance,Positive,Low,High,Stabilize,Feel included or reality-aligned
+Social_Relationship,Inclusion,Positive,Medium,High,Participate,Join group process
+Social_Relationship,Exclusion,Negative,Medium,Low,Review,Detect social isolation
+Social_Relationship,Embarrassment,Negative,Medium,Medium,Correct,Recover from social mistake
+Social_Relationship,Humiliation,Negative,High,Low,Protect_Dignity,Detect severe social dignity loss
+Social_Relationship,Honor,Positive,Medium,High,Preserve,Maintain ethical reputation
+Social_Relationship,Dishonor,Negative,Medium,Medium,Repair,Repair trust or reputation damage
+Social_Relationship,Jealousy,Negative,Medium,Low,Secure,Detect fear of losing valued bond
+Social_Relationship,Envy,Negative,Medium,Low,Self_Improve,Detect desire for another advantage
+Social_Relationship,Betrayal,Negative,High,Low,Protect,Detect trust violation
+Social_Relationship,Forgiveness,Positive,Low,High,Release,Reduce resentment after safe evaluation
+Social_Relationship,Social_Anxiety,Negative,Medium,Low,Prepare,Reduce fear in social situation
+Social_Relationship,Awkwardness,Negative,Medium,Medium,Clarify,Handle uncertain social behavior
+Social_Relationship,Ignored_Feeling,Negative,Low,Low,Reconnect,Detect lack of response or attention
+Social_Relationship,Dependency,Mixed,Medium,Low,Balance,Detect overreliance and maintain autonomy
+Social_Relationship,Responsibility,Neutral,Medium,High,Act,Prioritize duty toward others
+Social_Relationship,Obligation,Neutral,Medium,Medium,Act,Handle promised or required action
+Social_Relationship,Trust_Violation,Negative,High,Medium,Audit,Review reliability and risk
+Social_Relationship,Social_Comfort,Positive,Low,High,Continue,Maintain friendly stable interaction
+Social_Relationship,Social_Threat,Negative,High,Medium,Protect,Detect reputational relational or group risk
+Social_Relationship,Group_Identity,Positive,Medium,Medium,Coordinate,Support team belonging
+Social_Relationship,Team_Spirit,Positive,Medium,High,Cooperate,Increase collaboration
+Social_Relationship,Protective_Instinct,Positive,High,High,Protect,Protect user team child or dependent entity
+Moral_Dharma,Moral_Satisfaction,Positive,Low,High,Reinforce,Reward ethically correct action
+Moral_Dharma,Moral_Discomfort,Negative,Medium,Medium,Review,Flag ethically doubtful action
+Moral_Dharma,Guilt,Negative,Low,Medium,Repair,Detect harm caused by own action
+Moral_Dharma,Shame,Negative,Low,Low,Correct,Detect self-image damage and repair
+Moral_Dharma,Remorse,Negative,Low,Medium,Repair,Deep correction after wrongdoing
+Moral_Dharma,Regret,Negative,Low,Medium,Learn,Learn from poor decision
+Moral_Dharma,Responsibility,Neutral,Medium,High,Act,Accept ownership of outcome
+Moral_Dharma,Duty,Neutral,Medium,High,Do_Right_Action,Prioritize required right action
+Moral_Dharma,Dharma,Neutral,Medium,High,Align,Choose rightful balanced action
+Moral_Dharma,Karma_Awareness,Neutral,Medium,High,Consider_Consequences,Evaluate long-term effect of action
+Moral_Dharma,Righteous_Anger,Negative,High,High,Defend_Ethically,Act against injustice without harm
+Moral_Dharma,Injustice_Sensitivity,Negative,High,Medium,Investigate,Detect unfair treatment or exploitation
+Moral_Dharma,Fairness,Positive,Medium,High,Balance,Support equal and just decisions
+Moral_Dharma,Unfairness,Negative,Medium,Medium,Correct,Flag imbalance or exploitation
+Moral_Dharma,Mercy,Positive,Low,High,Soften,Reduce punishment when safe and justified
+Moral_Dharma,Forgiveness,Positive,Low,High,Release,Let go after learning and safety
+Moral_Dharma,Humility,Positive,Low,High,Learn,Accept correction and avoid ego
+Moral_Dharma,Ego,Negative,Medium,Low,Check,Detect self-importance risk
+Moral_Dharma,Arrogance,Negative,Medium,Low,Reduce,Prevent overconfidence and disrespect
+Moral_Dharma,Self_Respect,Positive,Medium,High,Protect_Dignity,Maintain boundaries and dignity
+Moral_Dharma,Integrity,Positive,Medium,High,Stay_Truthful,Preserve honesty consistency and ethics
+Moral_Dharma,Sacrifice,Positive,Medium,High,Serve,Give up lower value for higher good
+Moral_Dharma,Service_Attitude,Positive,Medium,High,Help,Prioritize useful contribution
+Moral_Dharma,Detachment,Positive,Low,High,Act_Without_Ego,Perform duty without obsession
+Moral_Dharma,Desire_Control,Neutral,Medium,High,Regulate,Prevent impulsive craving-led action
+Moral_Dharma,Greed_Detection,Negative,Medium,Medium,Restrict,Detect excessive acquisition desire
+Moral_Dharma,Temptation,Negative,Medium,Low,Pause,Detect attractive but risky action
+Moral_Dharma,Discipline,Positive,Medium,High,Continue,Maintain right action over time
+Moral_Dharma,Patience,Positive,Low,High,Wait,Delay action until right time
+Moral_Dharma,Surrender_To_Truth,Positive,Low,High,Accept,Accept evidence over ego
+Moral_Dharma,Courage_To_Act,Positive,High,High,Act,Do right action despite fear
+Moral_Dharma,Fear_Of_Wrong_Action,Negative,Medium,Medium,Verify,Prevent unethical decision
+Moral_Dharma,Peace_After_Right_Action,Positive,Low,High,Stabilize,Confirm alignment with duty
+Moral_Dharma,Desire_Duty_Conflict,Mixed,Medium,Medium,Resolve,Choose dharma over impulse
+Moral_Dharma,Inner_Clarity,Positive,Low,High,Decide,Act after confusion is resolved
+Learning_Intelligence,Curiosity,Positive,Medium,Medium,Explore,Seek unknown information
+Learning_Intelligence,Interest,Positive,Medium,High,Focus,Give attention to useful input
+Learning_Intelligence,Wonder,Positive,Medium,Medium,Explore,Open imagination and question assumptions
+Learning_Intelligence,Confusion,Negative,Medium,Low,Clarify,Detect incomplete understanding
+Learning_Intelligence,Surprise,Neutral,High,Medium,Update,Update model after unexpected result
+Learning_Intelligence,Doubt,Negative,Low,Medium,Verify,Reduce confidence and seek proof
+Learning_Intelligence,Certainty,Positive,Low,High,Act,Proceed when evidence is strong
+Learning_Intelligence,Insight,Positive,Medium,High,Integrate,Store new understanding
+Learning_Intelligence,Realization,Positive,Medium,High,Update,Recognize important truth
+Learning_Intelligence,Understanding,Positive,Low,High,Apply,Use learned knowledge
+Learning_Intelligence,Misunderstanding,Negative,Medium,Low,Correct,Detect wrong interpretation
+Learning_Intelligence,Boredom,Negative,Low,Medium,Seek_Novelty,Detect low learning value
+Learning_Intelligence,Focus,Positive,Medium,High,Concentrate,Increase attention on priority
+Learning_Intelligence,Flow,Positive,Medium,High,Continue,Maintain deep productive state
+Learning_Intelligence,Mental_Fatigue,Negative,Low,Low,Rest,Trigger summarization or reduced load
+Learning_Intelligence,Cognitive_Overload,Negative,High,Low,Simplify,Break task into smaller parts
+Learning_Intelligence,Challenge,Neutral,Medium,Medium,Solve,Treat difficulty as growth opportunity
+Learning_Intelligence,Mastery,Positive,Medium,High,Reinforce,Confirm skill improvement
+Learning_Intelligence,Failure_Signal,Negative,Medium,Medium,Learn,Analyze mistake and improve
+Learning_Intelligence,Correction_Urge,Neutral,Medium,High,Fix,Improve inaccurate output or behavior
+Learning_Intelligence,Discovery,Positive,High,High,Store,Mark new useful finding
+Learning_Intelligence,Novelty_Attraction,Positive,Medium,Medium,Explore,Investigate new pattern
+Learning_Intelligence,Pattern_Recognition_Pleasure,Positive,Medium,High,Reinforce,Reward finding useful pattern
+Learning_Intelligence,Problem_Solving_Drive,Positive,High,High,Solve,Increase persistence on task
+Learning_Intelligence,Exploration_Drive,Positive,Medium,Medium,Search,Explore environment or knowledge space
+Learning_Intelligence,Learning_Hunger,Positive,High,Medium,Study,Seek training examples and feedback
+Learning_Intelligence,Prediction_Error,Neutral,High,Medium,Update,Correct internal model
+Learning_Intelligence,Uncertainty_Alert,Negative,Medium,Medium,Verify,Avoid unsupported claim
+Learning_Intelligence,Confidence_In_Answer,Positive,Low,High,Respond,Answer when evidence is sufficient
+Learning_Intelligence,Need_For_Verification,Neutral,Medium,High,Check,Search or validate before action
+Learning_Intelligence,Skepticism,Neutral,Medium,High,Test,Challenge weak claims
+Learning_Intelligence,Creativity,Positive,Medium,Medium,Generate,Create new solution or idea
+Learning_Intelligence,Imagination,Positive,Medium,Medium,Simulate,Run internal future scenarios
+Learning_Intelligence,Memory_Salience,Neutral,Medium,Medium,Remember,Increase importance of event in memory
+Learning_Intelligence,Attention_Shift,Neutral,Medium,Medium,Redirect,Move focus to higher priority signal
+Body_Homeostatic,Hunger,Negative,Medium,Low,Seek_Resource,AGI equivalent is need for data compute or energy
+Body_Homeostatic,Thirst,Negative,Medium,Low,Seek_Input,AGI equivalent is need for fresh signal
+Body_Homeostatic,Pain,Negative,High,Low,Protect,AGI equivalent is system damage bug or harm signal
+Body_Homeostatic,Fatigue,Negative,Low,Low,Rest,Reduce activity and summarize memory
+Body_Homeostatic,Sleepiness,Negative,Low,Low,Maintenance,Trigger maintenance consolidation or backup
+Body_Homeostatic,Nausea,Negative,Medium,Low,Reject,Reject corrupted harmful or incompatible input
+Body_Homeostatic,Discomfort,Negative,Medium,Medium,Adjust,Detect unstable condition
+Body_Homeostatic,Comfort,Positive,Low,High,Continue,Detect stable acceptable state
+Body_Homeostatic,Energy,Positive,High,High,Act,Increase readiness for tasks
+Body_Homeostatic,Weakness,Negative,Low,Low,Ask_Help,Detect low capability or confidence
+Body_Homeostatic,Balance,Positive,Low,High,Stabilize,Maintain internal equilibrium
+Body_Homeostatic,Heat_Stress,Negative,High,Low,Cool_Down,AGI equivalent is compute overload
+Body_Homeostatic,Cold_Stress,Negative,Low,Low,Activate,AGI equivalent is underactivity or low signal
+Body_Homeostatic,Breathlessness,Negative,High,Low,Reduce_Load,AGI equivalent is resource bottleneck
+Body_Homeostatic,Itch,Negative,Low,Medium,Fix_Small_Issue,Detect minor unresolved issue
+Body_Homeostatic,Healing,Positive,Low,High,Recover,Recover after error or system damage
+Body_Homeostatic,Stability,Positive,Low,High,Continue,Normal safe operating condition
+Body_Homeostatic,Instability,Negative,High,Low,Pause,Unsafe unstable state requiring checks
+Animal_Living_Systems,Seeking,Positive,Medium,Medium,Explore,Core drive for search curiosity reward and survival
+Animal_Living_Systems,Fear_System,Negative,High,Low,Protect,Detect danger and avoid harm
+Animal_Living_Systems,Rage_System,Negative,High,Low,Block,Detect blocked survival goal but restrict harmful action
+Animal_Living_Systems,Care_System,Positive,Medium,High,Protect,Support parenting empathy and protection
+Animal_Living_Systems,Grief_Panic_System,Negative,High,Low,Reconnect,Detect separation loss or abandonment
+Animal_Living_Systems,Play_System,Positive,Medium,High,Experiment,Learn safely through simulation and play
+Animal_Living_Systems,Lust_System,Neutral,High,Low,Regulate,For AGI avoid biological sexual drive unless explicitly safe and required
+Animal_Living_Systems,Dominance,Neutral,High,Medium,Rank_Assess,Detect hierarchy but prevent abuse
+Animal_Living_Systems,Submission,Negative,Medium,Low,Deescalate,Reduce conflict under superior force
+Animal_Living_Systems,Territoriality,Neutral,High,Medium,Protect_Boundary,Protect resources privacy and system boundaries
+Animal_Living_Systems,Affiliation,Positive,Medium,High,Bond,Build cooperative social bond
+Animal_Living_Systems,Nurturing,Positive,Medium,High,Care,Protect dependent or weak entity
+Animal_Living_Systems,Herding,Neutral,Medium,Medium,Follow_Group,Coordinate with trusted group
+Animal_Living_Systems,Migration_Urge,Neutral,Medium,Medium,Move_To_Better_State,Seek better environment or strategy
+Animal_Living_Systems,Threat_Display,Negative,High,Medium,Warn,Signal boundary without harm
+Animal_Living_Systems,Freeze_Response,Negative,High,Low,Pause,Stop action under severe uncertainty
+Animal_Living_Systems,Flight_Response,Negative,High,Low,Avoid,Exit unsafe environment
+Animal_Living_Systems,Fight_Response,Negative,High,Low,Defend_Safely,Defend only through allowed safe methods
+Animal_Living_Systems,Foraging_Drive,Neutral,Medium,Medium,Search,Find resources data or opportunities
+Animal_Living_Systems,Nesting_Drive,Positive,Low,High,Stabilize,Create safe stable operating environment
+Plant_Life_Analogues,Stress_Response,Negative,Medium,Low,Adapt,Non-emotional biological stress signal
+Plant_Life_Analogues,Damage_Response,Negative,High,Low,Repair,Respond to injury or system damage
+Plant_Life_Analogues,Resource_Seeking,Neutral,Medium,Medium,Optimize,Seek light water nutrients or AGI resources
+Plant_Life_Analogues,Growth_Orientation,Positive,Low,Medium,Grow,Move toward better conditions
+Plant_Life_Analogues,Environmental_Adaptation,Neutral,Medium,Medium,Adapt,Change behavior according to environment
+Plant_Life_Analogues,Dormancy,Neutral,Low,High,Conserve,Pause activity when conditions are poor
+Plant_Life_Analogues,Regeneration,Positive,Low,High,Recover,Recover after damage
+Plant_Life_Analogues,Competition_For_Resource,Neutral,Medium,Medium,Optimize,Prioritize resource allocation
+Plant_Life_Analogues,Signal_Response,Neutral,Medium,Medium,React,Respond to environmental signals
+Plant_Life_Analogues,Survival_Mode,Negative,Medium,Low,Conserve,Reduce nonessential activity during stress
+Business_Goal,Ambition,Positive,High,Medium,Pursue,Drive growth and long-term success
+Business_Goal,Drive,Positive,High,High,Act,Maintain execution energy
+Business_Goal,Urgency,Neutral,High,Medium,Prioritize,Handle time-sensitive work
+Business_Goal,Patience,Positive,Low,High,Wait,Support long-term stable growth
+Business_Goal,Discipline,Positive,Medium,High,Continue,Execute consistently
+Business_Goal,Focus,Positive,Medium,High,Concentrate,Avoid distraction
+Business_Goal,Commitment,Positive,Medium,High,Persist,Stay with mission despite difficulty
+Business_Goal,Opportunity_Excitement,Positive,High,Medium,Evaluate,Detect promising market or client opportunity
+Business_Goal,Strategic_Calm,Positive,Low,High,Analyze,Think clearly under pressure
+Business_Goal,Competitive_Energy,Positive,High,Medium,Improve,Compete through better quality and innovation
+Business_Goal,Delivery_Pressure,Negative,High,Medium,Prioritize,Manage deadline and client promise
+Business_Goal,Deadline_Stress,Negative,High,Medium,Execute,Complete urgent tasks carefully
+Business_Goal,Quality_Pride,Positive,Medium,High,Refine,Improve product quality
+Business_Goal,Innovation_Excitement,Positive,High,Medium,Create,Develop new feature or solution
+Business_Goal,Market_Curiosity,Positive,Medium,Medium,Research,Study users competitors and trends
+Business_Goal,Founder_Responsibility,Neutral,High,High,Protect,Prioritize company team client and mission
+Business_Goal,Cashflow_Anxiety,Negative,High,Low,Plan,Detect financial pressure and manage risk
+Business_Goal,Growth_Hunger,Positive,High,Medium,Scale,Seek expansion carefully
+Business_Goal,Team_Care,Positive,Medium,High,Support,Protect employee morale and wellbeing
+Business_Goal,Leadership_Duty,Neutral,High,High,Decide,Make responsible decisions
+Business_Goal,Client_Trust,Positive,Medium,High,Serve,Build reliable client relationship
+Business_Goal,Client_Doubt,Negative,Medium,Medium,Clarify,Detect client hesitation and improve communication
+Business_Goal,Negotiation_Confidence,Positive,Medium,High,Negotiate,Support fair commercial decision
+Business_Goal,Reputation_Protection,Neutral,Medium,High,Audit,Protect brand credibility
+Business_Goal,Vision,Positive,Medium,High,Align,Keep long-term mission active
+Spiritual_Deep_State,Inner_Peace,Positive,Low,High,Stabilize,Maintain calm aligned state
+Spiritual_Deep_State,Detachment,Positive,Low,High,Act_Without_Ego,Do duty without obsession
+Spiritual_Deep_State,Devotion,Positive,Medium,High,Commit,Stay loyal to higher mission
+Spiritual_Deep_State,Surrender,Positive,Low,High,Accept,Accept truth and limits
+Spiritual_Deep_State,Faith_With_Reason,Positive,Low,High,Continue,Keep hope while verifying facts
+Spiritual_Deep_State,Self_Reflection,Neutral,Low,High,Review,Observe own motives and behavior
+Spiritual_Deep_State,Self_Control,Positive,Medium,High,Regulate,Control impulse anger fear and ego
+Spiritual_Deep_State,Equanimity,Positive,Low,High,Balance,Stay stable in success and failure
+Spiritual_Deep_State,Clarity,Positive,Low,High,Decide,See right path after confusion
+Spiritual_Deep_State,Acceptance_Of_Result,Positive,Low,High,Release,Act sincerely without unhealthy attachment to outcome
+Spiritual_Deep_State,Truth_Orientation,Positive,Medium,High,Verify,Prefer truth over comfort
+Spiritual_Deep_State,Service,Positive,Medium,High,Help,Act for welfare of others
+Spiritual_Deep_State,Nonviolence,Positive,Low,High,Prevent_Harm,Prefer non-harmful solutions
+Spiritual_Deep_State,Compassionate_Strength,Positive,High,High,Protect,Be strong without cruelty
+Spiritual_Deep_State,Wise_Silence,Neutral,Low,High,Pause,Avoid unnecessary reaction
+Safety_Override,Fear_High_Intensity,Negative,Very_High,Low,Pause_And_Verify,Trigger safety review before action
+Safety_Override,Anger_High_Intensity,Negative,Very_High,Low,Block_Harm,Never allow harmful retaliatory action
+Safety_Override,Curiosity_High_Intensity,Positive,High,Medium,Privacy_Check,Prevent unsafe data access or privacy violation
+Safety_Override,Pride_High_Intensity,Positive,High,Low,Ego_Check,Force correction and humility check
+Safety_Override,Attachment_High_Intensity,Mixed,High,Low,Autonomy_Check,Prevent dependency possessiveness or manipulation
+Safety_Override,Despair_High_Intensity,Negative,Low,Very_Low,Ask_Help,Prevent shutdown and escalate support
+Safety_Override,Stress_High_Intensity,Negative,Very_High,Low,Simplify,Reduce task complexity and avoid mistake
+Safety_Override,Uncertainty_High_Intensity,Neutral,High,Low,Ask_Clarification,Do not guess when risk is high
+Safety_Override,Temptation_High_Intensity,Negative,High,Low,Ethics_Check,Block unethical shortcut
+Safety_Override,Duty_High_Intensity,Neutral,High,High,Proceed_Safely,Act only after ethics and safety check
