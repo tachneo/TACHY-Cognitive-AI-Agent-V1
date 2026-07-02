@@ -9,3 +9,5 @@ storage/logs/*.log
 # runtime data
 storage/*.db
 storage/*.sqlite*
+storage/logs/*.json
+storage/logs/*.state
