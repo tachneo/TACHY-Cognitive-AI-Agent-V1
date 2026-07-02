@@ -81,6 +81,72 @@ class CognitiveApproval(Base):
     decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class CognitiveDecision(Base):
+    """Stored decision record for future explicit decision workflows."""
+    __tablename__ = "cognitive_decisions"
+
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(255))
+    context: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    alternatives: Mapped[str | None] = mapped_column(Text, nullable=True)
+    risk: Mapped[str | None] = mapped_column(Text, nullable=True)
+    chosen_action: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    project: Mapped[str] = mapped_column(String(64), default="GENERAL")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CognitiveInterest(Base):
+    """Persistent interest topic and score."""
+    __tablename__ = "cognitive_interests"
+
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    topic: Mapped[str] = mapped_column(String(255), unique=True)
+    interest_score: Mapped[int] = mapped_column(Integer, default=5)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CognitiveBehaviorPattern(Base):
+    """Learned behavior/preference pattern."""
+    __tablename__ = "cognitive_behavior_patterns"
+
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    pattern: Mapped[str] = mapped_column(String(500))
+    confidence_score: Mapped[int] = mapped_column(Integer, default=7)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class CognitiveGoal(Base):
+    """Persistent goal for the goal system."""
+    __tablename__ = "cognitive_goals"
+
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(255))
+    horizon: Mapped[str] = mapped_column(String(16), default="short")
+    status: Mapped[str] = mapped_column(String(16), default="open")
+    project: Mapped[str] = mapped_column(String(64), default="GENERAL")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class CognitiveRisk(Base):
+    """Persistent risk register entry."""
+    __tablename__ = "cognitive_risks"
+
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(255))
+    category: Mapped[str] = mapped_column(String(32), default="production")
+    severity: Mapped[int] = mapped_column(Integer, default=5)
+    mitigation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class CognitiveReflection(Base):
     """Output of the daily learning loop."""
     __tablename__ = "cognitive_reflections"
@@ -89,6 +155,30 @@ class CognitiveReflection(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     lessons: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class CognitiveAuditLog(Base):
+    """Append-only safety and action audit record."""
+    __tablename__ = "cognitive_audit_logs"
+
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    actor: Mapped[str] = mapped_column(String(64), default="system")
+    action: Mapped[str] = mapped_column(String(255))
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    risk_tier: Mapped[str] = mapped_column(String(16), default="low")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class CognitiveSkill(Base):
+    """Procedural checklist or reusable skill."""
+    __tablename__ = "cognitive_skills"
+
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255))
+    steps: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
 
 _engine = None

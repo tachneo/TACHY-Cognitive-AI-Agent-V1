@@ -7,7 +7,12 @@
 - **Guardian / final authority:** Rohit Kumar (Founder of TODY, CTO/Head of Technology, TACHY EDTECH PRIVATE LIMITED)
 - **Domain:** maa.tachy.in
 - **Stack:** Python 3.12+, FastAPI, MySQL/PostgreSQL (SQLAlchemy), optional Redis (working memory) + vector search (semantic memory)
-- **Status:** Phase 1A scaffold — bootable foundation. Most brain modules are real stubs to be filled in phase by phase.
+- **Status:** Live supervised brain runtime with TODY worker, Hugging Face LLM,
+  behavior learning, guardian dialogue memory, and Phase 2A mother-care/Gita
+  growth layer.
+
+Project status and resume notes live in [`CHANGELOG.md`](CHANGELOG.md). Update
+that file after each phase so the next session can continue safely.
 
 ---
 
@@ -35,8 +40,8 @@ TACHY Cognitive Brain OS V1
 ├── 5. Reasoning System       app/brain/cognitive_loop.py + decision_engine.py
 ├── 6. Action System          app/agents/*
 ├── 7. Emotion-Aware Priority app/brain/attention_system.py  (priority engine)
-├── 8. Ethics Layer (Gita)    app/safety/policy.py
-└── 9. Learning Loop          app/brain/learning_engine.py + self_review.py
+├── 8. Ethics Layer (Gita)    app/safety/policy.py + brain/nurture_engine.py
+└── 9. Learning Loop          app/brain/learning_engine.py + self_review.py + nurture_engine.py
 ```
 
 ### Memory types (`app/memory/`)
@@ -75,6 +80,34 @@ Dharma (right duty) · Karma (consequences) · Satya (truth, no fake confidence)
 Ahimsa (no harm to people/data/systems/business) · Sanyam (self-control before action) ·
 Vivek (wise discrimination) · Seva (serve students, schools, clients, society).
 
+The Gita layer is implemented as practical behavior guidance, not religious
+authority. It teaches the brain to pause before risky work, speak truthfully,
+avoid harm, serve the guardian/users, and choose duty over ego or shortcuts.
+
+## Mother-care and teacher-guided growth
+
+Phase 2A adds a newborn-style nurturing layer in `app/brain/nurture_engine.py`:
+
+- care principles for patience, protection, truth, correction, and curiosity
+- daily one-skill practice from foundational skills
+- homework assignment and completion tracking from Rohit's instructions
+- Bhagavad Gita dharma checks before actions
+- daily growth reports that can be sent to Rohit through verified TODY guardian
+  direct reply
+- child-like curiosity check-ins that ask one useful question and explore the
+  world with Rohit
+
+Key endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /reflection/care-profile` | show mother-care and Gita principles |
+| `POST /reflection/homework` | assign teacher/homework task |
+| `POST /reflection/daily-skill` | practice one daily skill |
+| `POST /reflection/growth-report` | create daily growth report |
+| `POST /tody/growth-report/send` | send growth report to Rohit on TODY |
+| `POST /tody/curiosity/send` | send a proactive curiosity/check-in message |
+
 ---
 
 ## Folder structure
@@ -84,7 +117,7 @@ maa.tachy.in/
 ├── app/
 │   ├── main.py              # FastAPI entrypoint
 │   ├── config.py            # env-driven settings
-│   ├── brain/               # identity, need, interest, attention, loop, decision, simulation, self-review, learning
+│   ├── brain/               # identity, need, interest, attention, loop, decision, simulation, self-review, human learning
 │   ├── memory/              # 15 memory subsystems + base
 │   ├── safety/              # risk classifier, approval gate, policy, secret detector, injection guard, audit
 │   ├── tools/               # code reader/auditor, php security checker, mysql read-only, doc/business writer
@@ -94,6 +127,8 @@ maa.tachy.in/
 ├── tests/
 ├── storage/logs/
 ├── requirements.txt
+├── Dockerfile
+├── DEPLOYMENT.md
 ├── .env.example
 └── docker-compose.yml
 ```
@@ -113,6 +148,13 @@ uvicorn app.main:app --host 127.0.0.1 --port 8200 --reload
 
 Health check: `GET http://127.0.0.1:8200/health`
 
+All non-health HTTP endpoints are protected by `X-API-Key` when
+`INTERNAL_API_KEY` is configured. In production, the app fails closed if
+`INTERNAL_API_KEY` is missing.
+
+Docker/local deployment notes are in [`DEPLOYMENT.md`](DEPLOYMENT.md).
+Schema changes should use Alembic migrations in `app/db/migrations/`.
+
 > Serve publicly the same way as faceapi: nginx on `maa.tachy.in` → reverse-proxy to `127.0.0.1:8200`.
 > **Not wired into nginx yet** — kept isolated from live projects until you approve.
 
@@ -122,11 +164,24 @@ Health check: `GET http://127.0.0.1:8200/health`
 
 | Phase | Goal |
 |-------|------|
+| **0** | Engineering foundation: auth, audit, migrations, deployment, tests |
 | **1A** | Cognitive Brain OS skeleton *(this scaffold)* |
 | **1B** | Memory + priority + decision engines fully implemented |
 | **1C** | Coding / security / business agents |
 | **1D** | TODY app connection |
 | **1E** | Controlled automation |
 | **1F** | Continuous self-improvement |
+| **1G** | Human behavior learning: tone, emotion, humor, preferences, knowledge interests |
+| **1H** | Goal/personality formation + safe TODY conversation draft queue |
+| **1I** | Conversational identity: Rohit TODY trust, dialogue memory, reply status |
+| **1J** | Conversation sessions: replay safety, summaries, identity continuity |
+| **1K** | TODY worker design: dry-run poller, lock, worker status |
+| **1L** | Live TODY activation checklist: preflight + manual one-message processing |
+| **1M** | Live supervised TODY runtime: systemd app + worker |
+| **1N** | Hugging Face LLM provider: lower-cost/free-tier-friendly LLM route |
+| **2A** | Mother-care/Gita growth: care profile, homework, daily skill, TODY report |
+| **2B** | Child-like curiosity: proactive questions and world exploration check-ins |
+| **2** | Internet observation: safe research agent + source trust + fact memory |
+| **3** | World model: people, clients, schools, systems, risks, dependencies |
 
 First build the **brain base**, then attach skills.

@@ -1,0 +1,13 @@
+.git
+.pytest_cache
+.venv
+__pycache__
+*.pyc
+.env
+storage/*.db
+storage/*.sqlite*
+storage/logs/*.log
+tests
+README.md
+CHANGELOG.md
+DEPLOYMENT.md

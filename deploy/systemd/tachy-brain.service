@@ -1,0 +1,15 @@
+[Unit]
+Description=TACHY Cognitive Brain OS API
+After=network.target
+
+[Service]
+WorkingDirectory=/var/www/maa.tachy.in
+EnvironmentFile=/var/www/maa.tachy.in/.env
+ExecStart=/var/www/maa.tachy.in/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8200
+Restart=always
+RestartSec=5
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target

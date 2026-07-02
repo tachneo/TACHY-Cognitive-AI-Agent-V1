@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     # Identity / guardian
     guardian_name: str = "Rohit Kumar"
     company_name: str = "TACHY EDTECH PRIVATE LIMITED"
+    guardian_tody_username: str = "rohitsingh"
+    guardian_tody_email: str = "rohitji.patna@gmail.com"
+    guardian_tody_direct_reply: bool = True
+    tody_supervised_auto_reply: bool = False
 
     # Database — SQLite by default so the brain runs with zero setup.
     # In production set DB_URL to MySQL/PostgreSQL in .env.
@@ -30,15 +34,28 @@ class Settings(BaseSettings):
     llm_provider: str = "anthropic"
     llm_model: str = "claude-opus-4-8"
     llm_api_key: str = ""
+    hf_token: str = ""
+    hf_model: str = "openai/gpt-oss-120b:fastest"
+    hf_base_url: str = "https://router.huggingface.co/v1"
 
     # Safety
     safety_enforce: bool = True
     high_risk_require_approval: bool = True
+    internal_api_key: str = ""
 
     # TODY integration (Phase 1D). Credentials live only in .env (gitignored).
     tody_api_base: str = "https://api.tody.in/api"
     tody_email: str = ""
     tody_password: str = ""
+
+    # Web learning (Phase 1O) — read-only internet exploration.
+    web_learning_enabled: bool = True
+    web_learning_max_pages: int = 3
+    web_learning_fetch_timeout: float = 20.0
+    web_learning_max_bytes: int = 600_000
+    web_learning_digest_chars: int = 9_000
+    web_learning_user_agent: str = "TachyBrainBot/1.0 (+https://maa.tachy.in)"
+    web_learning_state_path: str = "storage/logs/web_learning_topics.json"
 
 
 @lru_cache

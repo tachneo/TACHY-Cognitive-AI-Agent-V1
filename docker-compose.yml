@@ -3,9 +3,10 @@ services:
     build: .
     container_name: tachy_brain
     env_file: .env
+    environment:
+      DB_URL: mysql+pymysql://tachy_brain:${MYSQL_PASSWORD:-change_me}@db:3306/tachy_brain
     ports:
       - "127.0.0.1:8200:8200"
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8200
     depends_on:
       - db
     restart: unless-stopped
@@ -15,7 +16,9 @@ services:
     container_name: tachy_brain_db
     environment:
       MYSQL_DATABASE: tachy_brain
-      MYSQL_ROOT_PASSWORD: change_me
+      MYSQL_USER: tachy_brain
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change_me}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change_me_root}
     volumes:
       - brain_db:/var/lib/mysql
       - ./app/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.brain.attention_system import Signals
 from app.brain.cognitive_loop import process
@@ -11,13 +11,13 @@ router = APIRouter(tags=["chat"])
 
 
 class ChatRequest(BaseModel):
-    message: str
-    security_risk: int = 0
-    money_impact: int = 0
-    client_impact: int = 0
-    urgency: int = 0
-    guardian_interest: int = 0
-    emotional_weight: int = 0
+    message: str = Field(min_length=1, max_length=8000)
+    security_risk: int = Field(default=0, ge=0, le=10)
+    money_impact: int = Field(default=0, ge=0, le=10)
+    client_impact: int = Field(default=0, ge=0, le=10)
+    urgency: int = Field(default=0, ge=0, le=10)
+    guardian_interest: int = Field(default=0, ge=0, le=10)
+    emotional_weight: int = Field(default=0, ge=0, le=10)
 
 
 @router.post("/chat")

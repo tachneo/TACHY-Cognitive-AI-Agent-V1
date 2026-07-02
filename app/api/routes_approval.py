@@ -1,8 +1,8 @@
 """Approval routes — request, respond, and list pending high-risk actions."""
 from __future__ import annotations
 
-from fastapi import APIRouter
-from pydantic import BaseModel
+from fastapi import APIRouter, Query
+from pydantic import BaseModel, Field
 
 from app.safety import approvals
 
@@ -10,12 +10,12 @@ router = APIRouter(prefix="/approval", tags=["approval"])
 
 
 class ApprovalRequest(BaseModel):
-    action: str
-    payload: str | None = None
+    action: str = Field(min_length=1, max_length=255)
+    payload: str | None = Field(default=None, max_length=20000)
 
 
 class ApprovalResponse(BaseModel):
-    approval_id: int
+    approval_id: int = Field(gt=0)
     approved: bool
 
 
@@ -30,6 +30,6 @@ def respond(req: ApprovalResponse) -> dict:
 
 
 @router.get("/pending")
-def pending(limit: int = 50) -> dict:
+def pending(limit: int = Query(default=50, ge=1, le=100)) -> dict:
     rows = approvals.list_pending(limit=limit)
     return {"count": len(rows), "pending": rows}

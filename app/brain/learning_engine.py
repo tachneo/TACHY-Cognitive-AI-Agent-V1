@@ -9,8 +9,9 @@ from __future__ import annotations
 from collections import Counter
 
 from app.brain.attention_system import Signals, priority_score
+from app.brain.human_learning import observe_user, preference_summary
 from app.db.models import CognitiveReflection, session_scope
-from app.memory import base_memory
+from app.memory import base_memory, behavior_memory, emotional_memory
 
 
 def _emotion_from_signals(s: Signals) -> str:
@@ -24,9 +25,31 @@ def _emotion_from_signals(s: Signals) -> str:
 
 
 def learn(*, message: str, decision: dict, review: dict, signals: Signals) -> dict:
-    """Persist an episodic memory when the review says it's worth remembering."""
+    """Persist interaction and human-behavior learning signals."""
+    human = observe_user(message)
+    human_saved: list[dict] = []
+
+    if human.should_store:
+        summary = preference_summary(human)
+        if human.communication_preferences or human.knowledge_interests or human.correction:
+            mid = behavior_memory.remember_preference(
+                title=f"Learned user behavior: {human.tone}/{human.humor_style}",
+                content=summary,
+                importance=9 if human.correction else 8,
+            )
+            human_saved.append({"type": "behavior", "memory_id": mid})
+        if human.emotion != "neutral":
+            mid = emotional_memory.remember_emotion(
+                title=f"Observed user emotion: {human.emotion}",
+                content=summary or message[:500],
+                emotion=human.emotion,
+                importance=7,
+            )
+            human_saved.append({"type": "emotional", "memory_id": mid})
+
     if not review.get("should_remember"):
-        return {"saved": False}
+        return {"saved": bool(human_saved), "human_learning": human.as_dict(),
+                "human_memories": human_saved}
 
     score = priority_score(signals)
     mem_id = base_memory.add(
@@ -43,7 +66,13 @@ def learn(*, message: str, decision: dict, review: dict, signals: Signals) -> di
         future_action=decision.get("chosen"),
         is_permanent=score >= 60,
     )
-    return {"saved": True, "memory_id": mem_id, "priority": score}
+    return {
+        "saved": True,
+        "memory_id": mem_id,
+        "priority": score,
+        "human_learning": human.as_dict(),
+        "human_memories": human_saved,
+    }
 
 
 def daily_reflection(limit: int = 100) -> dict:

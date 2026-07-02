@@ -14,6 +14,18 @@ from app.db.models import CognitiveMemory, session_scope
 
 _WORD = re.compile(r"[a-z0-9]+")
 
+# Function words carry no meaning for recall; without this, chat-log memories
+# full of conversational filler outrank actual knowledge on every question.
+_STOPWORDS = {
+    "a", "about", "an", "and", "are", "as", "at", "be", "but", "by", "can",
+    "did", "do", "does", "for", "from", "had", "has", "have", "how", "i",
+    "if", "in", "is", "it", "its", "me", "my", "no", "not", "of", "on",
+    "or", "our", "please", "recently", "so", "tell", "that", "the", "their",
+    "them", "then", "there", "these", "they", "this", "to", "us", "was",
+    "we", "were", "what", "when", "where", "which", "who", "why", "will",
+    "with", "would", "you", "your",
+}
+
 
 @dataclass
 class MemoryHit:
@@ -95,7 +107,7 @@ def recall(text: str, *, project: str | None = None, limit: int = 5) -> list[Mem
     Vector/semantic recall is a Phase-1C upgrade; this gives useful grounding now.
     Permanent and high-importance memories get a relevance boost.
     """
-    q = _tokens(text)
+    q = _tokens(text) - _STOPWORDS or _tokens(text)
     if not q:
         return []
     with session_scope() as s:
@@ -111,6 +123,13 @@ def recall(text: str, *, project: str | None = None, limit: int = 5) -> list[Mem
             score = overlap + (m.importance_score / 10.0)
             if m.is_permanent:
                 score += 2.0
+            if m.memory_type == "semantic":
+                # Learned knowledge/facts beat chat-log noise on informational
+                # queries (Phase 1O: web-learned lessons must ground replies).
+                score += 1.5
+            if m.related_module and (_tokens(m.related_module) & q):
+                # The question names this memory's topic — strongest signal.
+                score += 3.0
             scored.append(_hit(m, round(score, 2)))
         scored.sort(key=lambda h: h.score, reverse=True)
         return scored[:limit]

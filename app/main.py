@@ -7,11 +7,12 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
 from app.brain import identity_core
 from app.config import get_settings
 from app.db.models import init_db
+from app.safety.auth import require_internal_api_key
 
 settings = get_settings()
 
@@ -30,7 +31,7 @@ def health() -> dict:
     return {"status": "ok", "app": settings.app_name, "env": settings.app_env}
 
 
-@app.get("/identity")
+@app.get("/identity", dependencies=[Depends(require_internal_api_key)])
 def identity() -> dict:
     return identity_core.describe()
 
@@ -38,14 +39,17 @@ def identity() -> dict:
 # ── Routes ──────────────────────────────────────────────────────
 from app.api import (  # noqa: E402
     routes_agent, routes_approval, routes_chat, routes_decision,
-    routes_memory, routes_projects, routes_reflection, routes_tody,
+    routes_learning, routes_memory, routes_projects, routes_reflection,
+    routes_tody,
 )
 
-app.include_router(routes_chat.router)
-app.include_router(routes_memory.router)
-app.include_router(routes_decision.router)
-app.include_router(routes_approval.router)
-app.include_router(routes_reflection.router)
-app.include_router(routes_projects.router)
-app.include_router(routes_agent.router)
-app.include_router(routes_tody.router)
+protected = [Depends(require_internal_api_key)]
+app.include_router(routes_chat.router, dependencies=protected)
+app.include_router(routes_memory.router, dependencies=protected)
+app.include_router(routes_decision.router, dependencies=protected)
+app.include_router(routes_approval.router, dependencies=protected)
+app.include_router(routes_reflection.router, dependencies=protected)
+app.include_router(routes_projects.router, dependencies=protected)
+app.include_router(routes_agent.router, dependencies=protected)
+app.include_router(routes_tody.router, dependencies=protected)
+app.include_router(routes_learning.router, dependencies=protected)

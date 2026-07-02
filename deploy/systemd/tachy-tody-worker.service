@@ -1,0 +1,15 @@
+[Unit]
+Description=TACHY TODY Conversation Worker
+After=network.target tachy-brain.service
+
+[Service]
+WorkingDirectory=/var/www/maa.tachy.in
+EnvironmentFile=/var/www/maa.tachy.in/.env
+ExecStart=/var/www/maa.tachy.in/.venv/bin/python -m app.scripts.tody_worker_loop --live --interval 20 --error-backoff 300
+Restart=always
+RestartSec=10
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target
