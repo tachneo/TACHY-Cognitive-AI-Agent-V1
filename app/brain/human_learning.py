@@ -32,6 +32,10 @@ _HUMOR_WORDS = ("joke", "funny", "humor", "clever", "cleaver", "witty")
 _CORRECTION_WORDS = (
     "don't", "do not", "never", "wrong", "mistake", "instead",
     "you should", "you must", "ensure",
+    # style feedback about how the brain talks (from live TODY sessions)
+    "improve yourself", "reply behavior", "human behavior reply",
+    "like a human", "like human", "too robotic", "robotic reply",
+    "not feeling like", "reply like",
 )
 _KNOWLEDGE_TOPICS = {
     "agi": "AGI",

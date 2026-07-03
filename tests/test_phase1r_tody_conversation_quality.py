@@ -125,7 +125,7 @@ def test_recent_openings_collected_and_injected(monkeypatch):
 
     captured = {}
 
-    def fake_process(message, signals=None, context=None):
+    def fake_process(message, signals=None, context=None, channel=None):
         captured["context"] = context
         return {"reply": "Fresh reply about the topic, no repeat."}
 

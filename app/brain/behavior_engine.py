@@ -82,6 +82,9 @@ _INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 _HIDDEN_NEEDS = {
+    "datetime": "wants the real current date/time — answer directly from the "
+                "clock provided in this prompt, in one natural sentence; no "
+                "web search, no placeholders, no extra content",
     "greeting": "light social connection — greet back warmly in 1-2 sentences, "
                 "no recap of old topics, no info dump",
     "realtime_lookup": "wants CURRENT factual data — give fetched live data with "
@@ -135,13 +138,27 @@ def detect_language(text: str) -> str:
 def detect_intent(text: str) -> str:
     lower = (text or "").lower().strip()
     bare = re.sub(r"[^a-z\s]", "", lower).strip()
-    if bare in _GREETINGS or (len(bare) <= 30
-                              and any(bare.startswith(g) for g in _GREETINGS)):
+    # Pure greeting only — "hi, what is today date and time" is a question.
+    if bare in _GREETINGS or any(
+            bare.startswith(g) and len(bare) <= len(g) + 6 for g in _GREETINGS):
         return "greeting"
+    # Clock questions are answered from the injected real clock, never searched.
+    if any(p in lower for p in ("today date", "date and time", "time and date",
+                                "current time", "time now", "what time",
+                                "what date", "date today", "todays date",
+                                "today's date", "aaj ki date", "day is it",
+                                "kitna baja", "what day today")):
+        return "datetime"
     # "price/rate/news + a now-word" is a live-data question, not negotiation.
     if any(w in lower for w in ("price", "rate", "news")) and any(
             w in lower for w in ("today", "current", "right now", "live",
                                  "latest", "abhi", "aaj")):
+        return "realtime_lookup"
+    # "new/latest/released + model/version/news/launch" → current-events check.
+    if any(w in lower for w in ("new", "latest", "released", "announced",
+                                "recent", "launched")) and any(
+            w in lower for w in ("model", "version", "release", "news",
+                                 "update", "launch", "announcement", "ai")):
         return "realtime_lookup"
     for intent, phrases in _INTENTS:
         if any(p in lower for p in phrases):
@@ -216,7 +233,8 @@ def _choose_mode(lower: str, st: ConversationState, signals: Signals) -> str:
 def _choose_depth(lower: str, st: ConversationState) -> str:
     if st.user_intent in {"code", "prompt", "plan"}:
         return "deep"
-    if st.user_intent in {"greeting", "realtime_lookup", "self_emotion"}:
+    if st.user_intent in {"greeting", "realtime_lookup", "self_emotion",
+                          "datetime"}:
         return "short"
     if st.relationship_mode == "crisis" or st.urgency == "high":
         return "short"
@@ -267,7 +285,19 @@ _LANGUAGE_RULES = {
 }
 
 
-def style_directives(st: ConversationState, mood_label: str | None = None) -> str:
+_CHAT_STYLE = (
+    "This is a MOBILE CHAT (like WhatsApp), not a document: write plain "
+    "conversational text — no markdown headings, no **bold**, no bullet "
+    "walls, no numbered essays. Short natural sentences, small paragraphs. "
+    "Do NOT start messages with his name (use it rarely, like a real friend). "
+    "NEVER end with assistant closers like 'How else can I assist you today?', "
+    "'just let me know', 'I'm here to help' — end where the thought ends, "
+    "or with a natural short question that moves the conversation."
+)
+
+
+def style_directives(st: ConversationState, mood_label: str | None = None,
+                     channel: str | None = None) -> str:
     """Turn the state into concrete instructions for the reply draft."""
     parts = [
         f"Speaking mode — {_STYLES[st.relationship_mode]}",
@@ -286,6 +316,8 @@ def style_directives(st: ConversationState, mood_label: str | None = None) -> st
          "later. Either use the live data provided now, or say plainly you "
          "could not fetch it this time."),
     ]
+    if channel == "chat":
+        parts.insert(0, _CHAT_STYLE)
     if st.user_intent == "greeting":
         parts.insert(0, "This is just a greeting: reply with 1-2 warm natural "
                         "sentences and ask what he needs. NOTHING else — no "
@@ -351,11 +383,41 @@ _ROBOTIC = [
 ]
 
 
-def humanize(draft: str) -> str:
+# Assistant-style closers stripped from the END of chat replies (they were on
+# every single TODY message: "How else can I assist you today?" etc.).
+_CLOSERS = [
+    re.compile(p, re.I) for p in (
+        r"\s*how (else )?(can|may) i (help|assist)( you)?( today)?\s*[?!.]?\s*$",
+        r"\s*(if|should) you (need|have) any (more |other |further )?"
+        r"(questions?|information|details?|help)[^.!?]*[.!?]\s*$",
+        r"\s*(just )?let me know( if| what| how)?[^.!?]*[.!?]?\s*$",
+        r"\s*i'?m (always )?here (to help|for you|if you need)[^.!?]*[.!?]\s*$",
+        r"\s*feel free to (ask|reach out)[^.!?]*[.!?]\s*$",
+        r"\s*is there anything else[^.!?]*[?!.]\s*$",
+    )
+]
+
+
+def _strip_closers(text: str) -> str:
+    out = text
+    for _ in range(3):  # replies often stack 2 closers
+        before = out
+        for pattern in _CLOSERS:
+            stripped = pattern.sub("", out).rstrip()
+            if len(stripped) >= 40:  # never gut a short genuine reply
+                out = stripped
+        if out == before:
+            break
+    return out
+
+
+def humanize(draft: str, *, chat: bool = False) -> str:
     """Strip chatbot boilerplate the model may still produce."""
     out = draft
     for pattern, repl in _ROBOTIC:
         out = pattern.sub(repl, out)
+    if chat:
+        out = _strip_closers(out)
     out = re.sub(r"\n{3,}", "\n\n", out).strip()
     if not out:
         return draft.strip()
@@ -377,12 +439,13 @@ def as_dict(st: ConversationState) -> dict:
 
 
 def analyze(message: str, signals: Signals | None = None,
-            emotion: dict | None = None) -> dict:
+            emotion: dict | None = None, channel: str | None = None) -> dict:
     """Public entry: state + directives (used by the loop and the API)."""
     if not get_settings().behavior_engine_enabled:
         return {"enabled": False}
     st = read_state(message, signals, emotion)
     mood_label = ((emotion or {}).get("mood") or {}).get("label")
     return {"enabled": True, "state": as_dict(st),
-            "directives": style_directives(st, mood_label=mood_label),
+            "directives": style_directives(st, mood_label=mood_label,
+                                           channel=channel),
             "max_tokens": max_tokens_for(st)}

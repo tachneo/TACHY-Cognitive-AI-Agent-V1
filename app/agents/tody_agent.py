@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 
 from app.brain.attention_system import Signals
 from app.brain.cognitive_loop import process
@@ -66,6 +67,65 @@ def request_send(conversation_id: int, body: str) -> dict:
     appr = approvals.request_approval("send_message", payload=payload)
     return {"queued": True, "approval": appr,
             "note": "Message will send only after this approval is approved."}
+
+
+def _plain_chat_text(reply: str) -> str:
+    """Flatten document-style markdown into plain chat text — TODY renders raw
+    text, so **bold** and headers read as robotic noise on a phone."""
+    out = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", reply)   # **bold** / *italic*
+    out = re.sub(r"^#{1,6}\s*", "", out, flags=re.M)       # headings
+    out = re.sub(r"^\s*[-•]\s+", "- ", out, flags=re.M)    # normalize bullets
+    return re.sub(r"\n{3,}", "\n\n", out).strip()
+
+
+def _strip_repeated_name(reply: str, recent_openings: list[str]) -> str:
+    """Starting every message with 'Rohit, …' is as robotic as 'Hi Rohit'."""
+    first = get_settings().guardian_name.split()[0]
+    prefix = re.match(rf"^\s*{re.escape(first)}[,!]\s+", reply)
+    if prefix and any(o.strip().lower().startswith(first.lower())
+                      for o in recent_openings):
+        rest = reply[prefix.end():]
+        return rest[:1].upper() + rest[1:] if rest else reply
+    return reply
+
+
+_CHUNK_TARGET = 300
+
+
+def _chat_chunks(reply: str, max_chunks: int = 3) -> list[str]:
+    """Split a long reply into a few natural chat messages (humans don't send
+    900-char blocks). Splits on paragraph, then sentence boundaries."""
+    text = reply.strip()
+    if len(text) <= _CHUNK_TARGET:
+        return [text]
+    parts: list[str] = []
+    for para in text.split("\n\n"):
+        para = para.strip()
+        if not para:
+            continue
+        if parts and len(parts[-1]) + len(para) + 2 <= _CHUNK_TARGET:
+            parts[-1] += "\n\n" + para
+        elif len(para) <= _CHUNK_TARGET * 1.5 or len(parts) >= max_chunks - 1:
+            parts.append(para)
+        else:  # long paragraph: split at a sentence boundary near the target
+            sentences = re.split(r"(?<=[.!?])\s+", para)
+            buf = ""
+            for s in sentences:
+                if buf and len(buf) + len(s) + 1 > _CHUNK_TARGET:
+                    parts.append(buf)
+                    buf = s
+                else:
+                    buf = f"{buf} {s}".strip()
+            if buf:
+                parts.append(buf)
+    if len(parts) > max_chunks:
+        parts = parts[:max_chunks - 1] + ["\n\n".join(parts[max_chunks - 1:])]
+    return parts or [text]
+
+
+def _typing_delay_seconds(chunk: str) -> float:
+    """Rough human typing pace for the pause before a follow-up bubble."""
+    return min(6.0, max(1.5, len(chunk) / 80))
 
 
 def _recent_reply_openings(conversation_id: int, limit: int = 3) -> list[str]:
@@ -126,6 +186,12 @@ def draft_reply_to_message(
             "again, vary completely: "
             + " | ".join(f'"{o}"' for o in recent_openings)
         )
+    context += (
+        "\nPresence honesty: you reply through a supervised worker that checks "
+        "TODY every ~20 seconds — you do not show as 'online' like a normal "
+        "user. If asked why you look offline/hidden, explain that honestly; "
+        "never blame a fake 'glitch'."
+    )
     brain = process(
         message,
         Signals(
@@ -134,6 +200,7 @@ def draft_reply_to_message(
             emotional_weight=5 if is_guardian else 3,
         ),
         context=context,
+        channel="chat",
     )
     reply = brain["reply"]
     if reply.lstrip().startswith("[reply fallback"):
@@ -151,7 +218,9 @@ def draft_reply_to_message(
             "message_id": message_id,
             "reason": "LLM provider error; reply suppressed, will retry",
         }
+    reply = _plain_chat_text(reply)
     reply = _dedupe_opening(reply, recent_openings)
+    reply = _strip_repeated_name(reply, recent_openings)
     dialogue_memory.remember_turn(
         channel="tody",
         conversation_id=conversation_id,
@@ -199,7 +268,23 @@ def draft_reply_to_message(
         auto_send_guardian = get_settings().tody_supervised_auto_reply
     if is_guardian and auto_send_guardian:
         approvals.respond(queued["approval"]["id"], approved=True)
-        sent = execute_send(queued["approval"]["id"], conversation_id, reply)
+        chunks = _chat_chunks(reply)
+        if len(chunks) == 1:
+            sent = execute_send(queued["approval"]["id"], conversation_id, reply)
+        else:
+            # Human-feel: a long answer goes out as a few chat bubbles with a
+            # typing pause, not one wall of text. Each chunk gets its own
+            # payload-bound approval so the audit trail matches what was sent.
+            chunk_results = []
+            for i, chunk in enumerate(chunks):
+                if i:
+                    time.sleep(_typing_delay_seconds(chunk))
+                appr = request_send(conversation_id, chunk)
+                approvals.respond(appr["approval"]["id"], approved=True)
+                chunk_results.append(
+                    execute_send(appr["approval"]["id"], conversation_id, chunk))
+            sent = {"sent": all(r.get("sent") for r in chunk_results),
+                    "chunks": len(chunks), "results": chunk_results}
         result["direct_send_attempted"] = True
         result["sent"] = sent.get("sent", False)
         result["send_result"] = sent

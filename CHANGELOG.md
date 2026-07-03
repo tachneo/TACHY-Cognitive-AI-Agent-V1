@@ -17,6 +17,73 @@ This is not a chatbot-first project. The brain core must own memory, goals,
 planning, safety, audit, and learning. Agents and tools stay below the brain as
 controlled workers.
 
+## 2026-07-03 - Phase 1S Human Chat Feel + Real Clock + Honest Search
+
+### Trigger
+
+Second audit of live conversation 135 (3 Jul 2026, after Phase 1R): brain
+replied "[current date and time]" as a literal placeholder, later claimed
+"today's date is October 1, 2023"; presented May-2025 Claude-4 news as new and
+answered "Fable 5" from training data (as an Xbox game) while claiming "I just
+checked the latest info"; every message opened "Rohit," and closed with
+"How else can I assist you today?"-style boilerplate; replies were markdown
+walls (headers/bold/bullets) sent as one block — Rohit's feedback: "its not
+feeling like human typing".
+
+### Completed
+
+- REAL CLOCK: cognitive loop injects "Current date & time RIGHT NOW: Friday,
+  03 July 2026, 09:12 PM IST" into every prompt, with never-use-training-dates
+  and never-output-placeholders rules. New `datetime` intent (today date/time
+  now/aaj ki date…) answers directly from the clock — short, no web search.
+  Greeting shortcut tightened: "hi, what is today date and time" is a question
+  (the greedy prefix match caused the live placeholder reply).
+- HONEST SEARCH CLAIMS: when no live lookup ran, the prompt now forbids "I
+  just checked" claims and requires admitting info may be outdated; when a
+  lookup DID run, a freshness rule requires comparing article dates to the
+  injected real date and labeling older news as such. Realtime triggers
+  widened: new/latest/released/announced × model/version/news/launch/ai
+  ("anthropic new ai model" now searches — verified live, returned the actual
+  Jun-30-2026 launch with sources).
+- HUMAN CHAT FEEL (TODY = channel="chat" through the loop):
+  - Chat style directives: plain conversational text, no markdown/bold/bullet
+    walls, don't open with his name, no assistant closers.
+  - `_plain_chat_text()` flattens any markdown the model still emits.
+  - `_strip_repeated_name()` removes the "Rohit," opener when recent replies
+    already used it.
+  - `humanize(chat=True)` strips stacked trailing closers ("just let me
+    know", "How else can I assist…", "I'm here to help…") with a 40-char
+    floor so short genuine replies are never gutted.
+  - MULTI-BUBBLE TYPING: guardian auto-replies >300 chars split into up to 3
+    natural chat messages sent sequentially with 1.5-6s typing pauses; each
+    chunk gets its own payload-bound approval so audit matches what was sent.
+- Presence honesty in TODY context: it replies via a ~20s worker and doesn't
+  show "online" — must explain that truthfully, never blame a fake "glitch"
+  (it did exactly that live).
+- Style-feedback learning: correction detector now catches "improve
+  yourself", "reply behavior", "like a human", "too robotic" etc., so
+  Rohit's meta-feedback persists as behavior memory and grounds future
+  replies.
+- Added `tests/test_phase1s_human_chat_feel.py` (15 tests).
+
+### Verified
+
+```bash
+.venv/bin/pytest -q -p no:cacheprovider   # 152 passed
+```
+
+Live: "hi, what is today date and time" → datetime intent, exact IST time
+answered in one sentence; "do you know about anthropic new ai model?" →
+realtime lookup, replied with the actual June 30, 2026 launch + sources and
+dated the information; chat-channel reply for an explanation question →
+plain text (no markdown), 3 bubbles with a natural analogy.
+
+### Next Recommended Phase
+
+Reaction learning loop (score Rohit's follow-up sentiment to auto-tune
+style), conversation-session mood continuity, and Phase 1E controlled
+automation.
+
 ## 2026-07-02 - Phase 1R TODY Conversation Quality (field-driven fixes)
 
 ### Trigger
@@ -386,6 +453,7 @@ The model can be changed by `.env` without code changes.
 | 1P | Emotion intelligence module | Done | 346-emotion taxonomy, deterministic appraisal + top-3 scoring, rule 1-10 gate pipeline (advisory-only), persistent mood, snapshots, loop integration, /emotion routes. |
 | 1Q | Human behavior engine | Done | Intent/hidden-need listening, 7 relationship modes, depth + language control (English/Hindi/Hinglish), humanize pass, honesty rule, partner personality, /behavior routes. |
 | 1R | TODY conversation quality | Done | Field-driven: greeting/realtime/self-emotion intents, 3-layer anti-repetition, live web answers with sources, LLM-error send guard, User/You context, hermetic test LLM. |
+| 1S | Human chat feel + clock | Done | Real IST clock in every prompt + datetime intent, honest search claims + freshness dating, chat-style output (no markdown/closers/name-openers), multi-bubble typing with pauses, presence honesty, style-feedback learning. |
 | 2A | Mother-care/Gita growth | Partial | Care profile, homework, daily skill learning, dharma check, and TODY growth report are implemented. |
 | 2B | Child-like curiosity | Partial | Proactive question/check-in behavior and daily curiosity messages are implemented. |
 | 2 | Internet observation | Not started | Add safe read-only research agent, source trust, freshness, fact memory. |
