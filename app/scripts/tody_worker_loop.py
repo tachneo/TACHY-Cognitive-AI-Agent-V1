@@ -98,6 +98,34 @@ def maybe_run_daily_web_learning(*, dry_run: bool) -> dict:
     return {"daily_web_learning": "done", "date": today, "topics": learned}
 
 
+def maybe_run_inner_life(*, dry_run: bool) -> dict:
+    """The brain's autonomous rhythm: think, learn, consolidate, and share
+    thoughts with the guardian (rate-limited, waking hours only)."""
+    if dry_run or not _env_true("INNER_LIFE_ENABLED"):
+        return {"inner_life": "disabled"}
+
+    from app.agents import tody_agent
+    from app.brain import inner_life
+    from app.memory import relationship_memory
+
+    ran = inner_life.tick()
+    if not ran.get("enabled"):
+        return {"inner_life": "disabled"}
+    result: dict = {"inner_life": [k for k in ran if k != "enabled"] or "idle"}
+
+    share = (ran.get("share") or {}).get("share")
+    conversation_id = os.getenv("TODY_DAILY_CURIOSITY_CONVERSATION_ID", "").strip()
+    if share and conversation_id.isdigit():
+        profile = relationship_memory.guardian_profile()
+        sender = {"username": profile["tody_username"],
+                  "email": profile["email"], "name": profile["name"]}
+        sent = tody_agent.direct_reply_to_guardian(
+            int(conversation_id), share, sender=sender,
+            message_id=f"inner-share-{dt.datetime.now(dt.UTC).timestamp():.0f}")
+        result["inner_share_sent"] = sent.get("sent", False)
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="TODY supervised worker loop")
     parser.add_argument("--live", action="store_true",
@@ -133,6 +161,9 @@ def main() -> int:
             web_learn = maybe_run_daily_web_learning(dry_run=dry_run)
             if web_learn["daily_web_learning"] != "disabled":
                 result = {**result, **web_learn}
+            inner = maybe_run_inner_life(dry_run=dry_run)
+            if inner["inner_life"] != "disabled":
+                result = {**result, **inner}
             print(result, flush=True)
             time.sleep(max(5, args.interval))
         except Exception as exc:

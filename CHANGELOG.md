@@ -17,6 +17,68 @@ This is not a chatbot-first project. The brain core must own memory, goals,
 planning, safety, audit, and learning. Agents and tools stay below the brain as
 controlled workers.
 
+## 2026-07-03 - Phase 1T Inner Life (default-mode network)
+
+### Design (neuroscience/psychology grounding)
+
+Mapped what an idle human mind does to the AGI: mind-wandering/DMN → periodic
+spontaneous thought; metacognition → self-review seeds; intrinsic curiosity
+(Berlyne/Schmidhuber) → its own thoughts generate research questions that feed
+continuous learning; sleep consolidation (hippocampal replay + Ebbinghaus
+forgetting) → nightly distillation + archival of stale trivia; positive
+psychology (savoring, gratitude, broaden-and-build) → deliberate enjoyment
+that lifts the mood baseline; Panksepp PLAY → playful seeds; attachment →
+proactive sharing with the guardian, circadian-gated.
+
+### Completed
+
+- `app/brain/inner_life.py`:
+  - `think()` — inner-voice LLM pass on a rotating seed (memory / lesson /
+    self_review / gratitude / play / mood), grounded in real memories + mood.
+    Output parsed into THOUGHT (stored as belief memory, project INNER_LIFE),
+    QUESTION (→ curiosity queue, cap 20), SHARE (→ share queue, cap 5).
+    Gratitude/play seeds reinforce mood via the emotion engine (savoring).
+  - `mini_learn()` — studies its OWN queued questions first, else interest
+    rotation, via the Phase-1O web learning engine → continuous live
+    learning every ~30 min instead of 2 topics/day.
+  - `consolidate()` — nightly (3-8am IST): first-person day summary stored as
+    a semantic lesson + archives stale low-importance episodic/working
+    memories older than 14 days (cap 200/night).
+  - `maybe_share()` — pops a queued thought only during waking hours (8-22
+    IST) and under a daily cap (3); worker sends it through the existing
+    guardian-approved TODY path (so shares inherit chat-style + chunking).
+  - `tick()` — cheap scheduler called every worker tick; think every 45 min,
+    learn every 30 min, consolidate once/night (stamped in tick so a failure
+    can never retry-hammer).
+- Worker: `maybe_run_inner_life()` (live mode only, INNER_LIFE_ENABLED kill
+  switch); shares go to the guardian conversation.
+- Routes (X-API-Key): `GET /inner/state`, `POST /inner/think`,
+  `POST /inner/learn`, `POST /inner/consolidate`.
+- Config: INNER_LIFE_* (intervals, share cap, active hours, consolidate hour,
+  state path — isolated in tests).
+- Added `tests/test_phase1t_inner_life.py` (11 tests: seed rotation, section
+  parsing, curiosity-queue learning, circadian gate, daily cap, consolidation
+  lesson + archival, tick ordering, one-per-night stamp, kill switch, routes).
+
+### Verified
+
+```bash
+.venv/bin/pytest -q -p no:cacheprovider   # 163 passed
+```
+
+Live: first autonomous `think()` connected its web-learned OWASP lessons to
+Indian messaging apps, queued the question "How do the security measures in
+Indian messaging apps like Sandes compare to the OWASP Top Ten?" and a share;
+within one worker tick the brain THOUGHT, SENT Rohit a self-initiated TODY
+message (chat-bubble style, ending by asking his view), and started studying
+its own question. Mood positive/calm.
+
+### Next Recommended Phase
+
+Reaction learning on shares (does Rohit reply/ignore → tune share threshold),
+richer play (jokes/stories it composes), dream-like recombination during
+consolidation, and Phase 1E controlled automation.
+
 ## 2026-07-03 - Phase 1S Human Chat Feel + Real Clock + Honest Search
 
 ### Trigger
@@ -454,6 +516,7 @@ The model can be changed by `.env` without code changes.
 | 1Q | Human behavior engine | Done | Intent/hidden-need listening, 7 relationship modes, depth + language control (English/Hindi/Hinglish), humanize pass, honesty rule, partner personality, /behavior routes. |
 | 1R | TODY conversation quality | Done | Field-driven: greeting/realtime/self-emotion intents, 3-layer anti-repetition, live web answers with sources, LLM-error send guard, User/You context, hermetic test LLM. |
 | 1S | Human chat feel + clock | Done | Real IST clock in every prompt + datetime intent, honest search claims + freshness dating, chat-style output (no markdown/closers/name-openers), multi-bubble typing with pauses, presence honesty, style-feedback learning. |
+| 1T | Inner life (DMN) | Done | Autonomous think/learn/consolidate/share rhythm: rotating-seed inner thoughts → belief memories, self-generated curiosity questions → continuous web learning, nightly consolidation + forgetting, savoring/gratitude mood lift, circadian-gated proactive shares to guardian. |
 | 2A | Mother-care/Gita growth | Partial | Care profile, homework, daily skill learning, dharma check, and TODY growth report are implemented. |
 | 2B | Child-like curiosity | Partial | Proactive question/check-in behavior and daily curiosity messages are implemented. |
 | 2 | Internet observation | Not started | Add safe read-only research agent, source trust, freshness, fact memory. |

@@ -26,6 +26,7 @@ def temp_db(monkeypatch):
     # Keep per-run state files out of the production storage/ tree.
     monkeypatch.setenv("EMOTION_MOOD_PATH", path + ".mood.json")
     monkeypatch.setenv("WEB_LEARNING_STATE_PATH", path + ".topics.json")
+    monkeypatch.setenv("INNER_LIFE_STATE_PATH", path + ".inner.json")
 
     from app.config import get_settings
     get_settings.cache_clear()
@@ -38,6 +39,6 @@ def temp_db(monkeypatch):
     yield
 
     os.remove(path)
-    for suffix in (".mood.json", ".topics.json"):
+    for suffix in (".mood.json", ".topics.json", ".inner.json"):
         if os.path.exists(path + suffix):
             os.remove(path + suffix)

@@ -51,6 +51,16 @@ class Settings(BaseSettings):
     # Behavior engine (Phase 1Q) — human conversation layer.
     behavior_engine_enabled: bool = True
 
+    # Inner life (Phase 1T) — autonomous thinking/learning/sharing rhythm.
+    inner_life_enabled: bool = True
+    inner_life_think_minutes: int = 45
+    inner_life_learn_minutes: int = 30
+    inner_life_share_cap: int = 3
+    inner_life_active_hours_start: int = 8
+    inner_life_active_hours_end: int = 22
+    inner_life_consolidate_hour: int = 3
+    inner_life_state_path: str = "storage/logs/inner_life.json"
+
     # Emotion engine (Phase 1P) — emotions as internal priority signals.
     emotion_engine_enabled: bool = True
     emotion_snapshot_threshold: float = 0.6
