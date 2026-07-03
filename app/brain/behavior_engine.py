@@ -82,6 +82,9 @@ _INTENTS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 _HIDDEN_NEEDS = {
+    "third_party_action": "wants a message sent to ANOTHER person — you cannot "
+                          "do that yet; be honest, don't fake it, and offer to "
+                          "draft the message text he can send himself",
     "datetime": "wants the real current date/time — answer directly from the "
                 "clock provided in this prompt, in one natural sentence; no "
                 "web search, no placeholders, no extra content",
@@ -142,6 +145,18 @@ def detect_intent(text: str) -> str:
     if bare in _GREETINGS or any(
             bare.startswith(g) and len(bare) <= len(g) + 6 for g in _GREETINGS):
         return "greeting"
+    # Requests to act on a THIRD PARTY (message/tell/contact someone else) —
+    # the brain cannot do this, so it must answer honestly, never fake it.
+    if any(w in lower for w in ("send message", "send a message", "message to",
+                                "msg to", "send to", "tell @", "contact @",
+                                "forward to", "reply to @", "send it to",
+                                "inform @", "notify @", "text @", "ping @",
+                                "message @", "send the same", "same message to",
+                                "drop a message")) or (
+            "@" in lower and any(w in lower for w in
+                                 ("send", "message", "tell", "contact", "inform",
+                                  "notify", "forward", "ping", "reach out"))):
+        return "third_party_action"
     # Clock questions are answered from the injected real clock, never searched.
     if any(p in lower for p in ("today date", "date and time", "time and date",
                                 "current time", "time now", "what time",
@@ -425,6 +440,27 @@ def humanize(draft: str, *, chat: bool = False) -> str:
         # A removal may leave a dangling lowercase sentence start.
         out = out[:1].upper() + out[1:]
     return out
+
+
+# Phrases that falsely claim an outward messaging action the brain cannot do.
+_FALSE_ACTION = re.compile(
+    r"\b("
+    r"i(?:'ll| will| am going to| can| have)?\s*(?:re)?send(?:ing)?(?:\s+(?:the|a|it|that|same))?\s*(?:message|msg)?"
+    r"|message (?:has been |was )?sent"
+    r"|(?:i've|i have) (?:sent|notified|messaged|informed|contacted|forwarded|pinged)"
+    r"|i'?ll (?:let|notify|inform|tell|ping|contact|message|reach out to) (?:them|her|him|@)"
+    r"|it (?:goes|will go) out (?:right )?(?:away|now)"
+    r"|(?:sending|forwarding) (?:it|the message|this) (?:to )?@?"
+    r"|i'?ll make sure (?:they|she|he|it) get"
+    r")\b",
+    re.I,
+)
+
+
+def claims_false_send(text: str) -> bool:
+    """True if the reply claims it sent/will send a message to someone —
+    used to catch (and refuse) hallucinated outward actions."""
+    return bool(_FALSE_ACTION.search(text or ""))
 
 
 _DEPTH_TOKENS = {"short": 300, "medium": 600, "deep": 1400}

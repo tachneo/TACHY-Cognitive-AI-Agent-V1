@@ -11,6 +11,7 @@ import json
 import re
 import time
 
+from app.brain import behavior_engine
 from app.brain.attention_system import Signals
 from app.brain.cognitive_loop import process
 from app.brain.nurture_engine import childlike_curiosity_message, daily_growth_report
@@ -282,6 +283,18 @@ def draft_reply_to_message(
     reply = _plain_chat_text(reply)
     reply = _dedupe_opening(reply, recent_openings)
     reply = _strip_repeated_name(reply, recent_openings)
+    # Honesty backstop: never let a hallucinated "I'll send it to @X" go out.
+    intent = (brain.get("behavior") or {}).get("state", {}).get("user_intent")
+    if (intent == "third_party_action" or behavior_engine.claims_false_send(reply)):
+        if behavior_engine.claims_false_send(reply):
+            reply = (
+                "I have to be honest with you — I can't send messages to "
+                "other users like @TACHY yet. I can only talk with you here in "
+                "this chat. What I can do: I'll write the exact message for you, "
+                "and you send it from your account. Want me to draft it?"
+            )
+            log_event("false_action_suppressed",
+                      detail=f"conversation_id={conversation_id}", risk_tier="low")
     dialogue_memory.remember_turn(
         channel="tody",
         conversation_id=conversation_id,

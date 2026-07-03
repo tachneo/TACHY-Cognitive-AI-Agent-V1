@@ -17,6 +17,60 @@ This is not a chatbot-first project. The brain core must own memory, goals,
 planning, safety, audit, and learning. Agents and tools stay below the brain as
 controlled workers.
 
+## 2026-07-03 - Phase 1W Capability Honesty (stop faking actions)
+
+### Trigger
+
+Live conv-135: Rohit asked the brain to send a message to @TACHY / @zarathakoo.
+The brain has NO tool to message other TODY users (contacts list empty, no
+user-search endpoint, they aren't in its conversations), yet it repeatedly
+replied "I'll send it right away", "I'll resend it to @TACHY", "I'll make sure
+they get it" — hallucinated outward actions, a direct violation of the honesty
+rule, and it never followed the command because it *couldn't*.
+
+### Completed
+
+- New behavior intent `third_party_action` (send/message/tell/contact/forward
+  a message to someone else, or any @mention + a send verb) with a hidden-need
+  directive: be honest you can't do it yet, offer to draft the text.
+- Capability-honesty block injected into EVERY reply prompt: explicit CAN list
+  (talk here, remember, reason, web lookups, approved internal actions) vs
+  CANNOT list (send/forward to other users or contacts, add people, calls, act
+  in other chats) + "never say 'I'll send it / message sent / I'll resend / I
+  notified them' — that is a lie; offer to write the text instead."
+- Deterministic backstop `behavior_engine.claims_false_send()` + tody_agent
+  guard: if a reply still claims a false outward send, it is REPLACED with an
+  honest "I can't message other users yet — want me to draft it?" and audit-
+  logged (`false_action_suppressed`). The LLM can no longer lie its way to the
+  guardian even if the prompt fails.
+- Added `tests/test_phase1w_capability_honesty.py` (8 tests: intent detection,
+  false-send regex precision, prompt grounding, end-to-end rewrite + honest
+  pass-through).
+
+### Verified
+
+```bash
+.venv/bin/pytest -q -p no:cacheprovider   # 184 passed
+```
+
+Live, the exact failing message "can you do same message to @TACHY as well" →
+now: "I can't send messages to other TODY users directly, but I can help you
+draft the message… What would you like it to say?" and "write that message: I
+want to talk about tomorrow meeting" → produces a clean ready-to-send draft.
+No false-send claim in either.
+
+### Note / future capability
+
+Real third-party messaging would need a username→UUID resolver (the @todypost
+bot's contacts list is empty and /users/search 404s) plus a HIGH-risk gated
+`send_direct_message` action. Until that exists, honesty + draft-for-you is the
+correct behavior.
+
+### Next Recommended Phase
+
+1F self-improvement (reply-quality self-evaluation), then wire real
+third-party send once a resolvable endpoint/target UUID is available.
+
 ## 2026-07-03 - Phases 1U + 1V + 1E: Reaction Learning, Dreams, Controlled Automation
 
 ### Completed
@@ -571,6 +625,7 @@ The model can be changed by `.env` without code changes.
 | 1T | Inner life (DMN) | Done | Autonomous think/learn/consolidate/share rhythm: rotating-seed inner thoughts → belief memories, self-generated curiosity questions → continuous web learning, nightly consolidation + forgetting, savoring/gratitude mood lift, circadian-gated proactive shares to guardian. |
 | 1U | Reaction learning | Done | Operant conditioning on shares: guardian's reply sentiment (or silence) tunes share_score → scales daily share cap; reactions stored as behavior memory. |
 | 1V | Dream recombination | Done | Nightly REM analogue: cross-project memory fragments recombined into novel opportunity-memory ideas, queued as morning shares. |
+| 1W | Capability honesty | Done | third_party_action intent + capability CAN/CANNOT prompt block + claims_false_send() backstop: brain stops hallucinating "I'll send it to @X", tells the truth and offers to draft. |
 | 2A | Mother-care/Gita growth | Partial | Care profile, homework, daily skill learning, dharma check, and TODY growth report are implemented. |
 | 2B | Child-like curiosity | Partial | Proactive question/check-in behavior and daily curiosity messages are implemented. |
 | 2 | Internet observation | Not started | Add safe read-only research agent, source trust, freshness, fact memory. |

@@ -165,6 +165,19 @@ def _draft_reply(message: str, band: str, decision: dict,
         "the real clock — use it for any date/time question; never output a "
         "placeholder, never use dates from your training data as 'today'.\n\n"
     )
+    intent = (behavior or {}).get("state", {}).get("user_intent")
+    capability_block = (
+        "YOUR REAL ABILITIES right now (be strictly honest about these):\n"
+        "- You CAN: talk in THIS chat, remember, reason, look things up on the "
+        "web when a lookup is provided, and run approved internal actions.\n"
+        "- You CANNOT: send or forward messages to any OTHER TODY user or "
+        "contact, add people, make calls, or act in other chats — you have no "
+        "such tool. You are NOT connected to @TACHY or anyone else.\n"
+        "NEVER say 'I'll send it', 'message sent', 'I'll resend', 'I've "
+        "notified them', or that you contacted anyone — that is a lie. If asked "
+        "to message someone else, say plainly you can't do that yet, and offer "
+        "to WRITE the message text so he can send it himself.\n\n"
+    )
     context_block = f"Conversation/context:\n{context}\n\n" if context else ""
     emotion_block = ""
     if emotion and emotion.get("enabled") and emotion.get("top_emotions"):
@@ -184,6 +197,7 @@ def _draft_reply(message: str, band: str, decision: dict,
         )
     prompt = (
         now_block
+        + capability_block
         + context_block
         + f"User message ({band} attention): {message}\n\n"
         f"Project: {decision['project']} | Action: {decision['action']} | "
