@@ -128,6 +128,59 @@ def _typing_delay_seconds(chunk: str) -> float:
     return min(6.0, max(1.5, len(chunk) / 80))
 
 
+_APPROVE_CMD = re.compile(r"^\s*(approve|reject)\s+#?(\d+)\s*$", re.I)
+_PENDING_CMD = re.compile(r"^\s*(pending|approvals?)\s*$", re.I)
+
+
+def _guardian_command_reply(message: str) -> str | None:
+    """Deterministic guardian chat commands — controlled automation from TODY:
+    'pending' lists approvals, 'approve 12' / 'reject 12' resolves them.
+    Returns the reply text, or None when the message is not a command."""
+    from app.brain import action_engine
+
+    if _PENDING_CMD.match(message or ""):
+        rows = approvals.list_pending(limit=10)
+        if not rows:
+            return "No pending approvals right now."
+        lines = [f"#{r['id']} {r['action']} ({r.get('risk_tier', 'high')})"
+                 for r in rows]
+        return ("Pending approvals:\n" + "\n".join(lines)
+                + "\nReply 'approve <id>' or 'reject <id>'.")
+
+    m = _APPROVE_CMD.match(message or "")
+    if not m:
+        return None
+    verb, approval_id = m.group(1).lower(), int(m.group(2))
+    row = approvals.get_approval(approval_id)
+    if row is None:
+        return f"I can't find approval #{approval_id}."
+    if row["status"] != "pending":
+        return f"Approval #{approval_id} is already {row['status']}."
+    if verb == "reject":
+        approvals.respond(approval_id, approved=False)
+        log_event("guardian_rejected", detail=f"approval_id={approval_id}")
+        return f"Rejected #{approval_id}. I won't do it."
+    approvals.respond(approval_id, approved=True)
+    log_event("guardian_approved", detail=f"approval_id={approval_id}")
+    if row["action"] == action_engine.BRAIN_ACTION:
+        result = action_engine.execute_approved(approval_id)
+        if result.get("executed"):
+            return (f"Approved and done: {result['action']} — "
+                    f"{str(result.get('result'))[:250]}")
+        return (f"Approved #{approval_id}, but execution failed: "
+                f"{result.get('reason') or result.get('result')}")
+    if row["action"] == "send_message":
+        try:
+            payload = json.loads(row["payload"] or "{}")
+            sent = execute_send(approval_id, int(payload["conversation_id"]),
+                                str(payload["body"]))
+            return ("Approved and sent." if sent.get("sent")
+                    else f"Approved, but send failed: {sent.get('reason')}")
+        except (ValueError, KeyError):
+            return f"Approved #{approval_id}, but its payload is unreadable."
+    return f"Approved #{approval_id}."
+
+
 def _recent_reply_openings(conversation_id: int, limit: int = 3) -> list[str]:
     """First ~60 chars of the brain's last few outbound replies — used to stop
     the model from opening every message the same way."""
@@ -178,30 +231,38 @@ def draft_reply_to_message(
     person = relationship_memory.guardian_profile()["name"] if is_guardian else None
     if is_guardian:
         relationship_memory.ensure_guardian_relationship()
-    context = dialogue_memory.identity_context(conversation_id, person=person)
+        # Reaction learning: his first message after a proactive share scores it.
+        from app.brain import inner_life
+        inner_life.observe_reaction(message)
+    # Guardian chat commands (pending/approve/reject) bypass the LLM entirely.
+    command_reply = _guardian_command_reply(message) if is_guardian else None
     recent_openings = _recent_reply_openings(conversation_id)
-    if recent_openings:
+    if command_reply is not None:
+        brain = {"reply": command_reply, "guardian_command": True}
+    else:
+        context = dialogue_memory.identity_context(conversation_id, person=person)
+        if recent_openings:
+            context += (
+                "\nYour own recent reply openings — do NOT start like any of "
+                "these again, vary completely: "
+                + " | ".join(f'"{o}"' for o in recent_openings)
+            )
         context += (
-            "\nYour own recent reply openings — do NOT start like any of these "
-            "again, vary completely: "
-            + " | ".join(f'"{o}"' for o in recent_openings)
+            "\nPresence honesty: you reply through a supervised worker that "
+            "checks TODY every ~20 seconds — you do not show as 'online' like "
+            "a normal user. If asked why you look offline/hidden, explain that "
+            "honestly; never blame a fake 'glitch'."
         )
-    context += (
-        "\nPresence honesty: you reply through a supervised worker that checks "
-        "TODY every ~20 seconds — you do not show as 'online' like a normal "
-        "user. If asked why you look offline/hidden, explain that honestly; "
-        "never blame a fake 'glitch'."
-    )
-    brain = process(
-        message,
-        Signals(
-            client_impact=3,
-            guardian_interest=10 if is_guardian else 6,
-            emotional_weight=5 if is_guardian else 3,
-        ),
-        context=context,
-        channel="chat",
-    )
+        brain = process(
+            message,
+            Signals(
+                client_impact=3,
+                guardian_interest=10 if is_guardian else 6,
+                emotional_weight=5 if is_guardian else 3,
+            ),
+            context=context,
+            channel="chat",
+        )
     reply = brain["reply"]
     if reply.lstrip().startswith("[reply fallback"):
         # LLM/provider error: never send internal error traces to TODY.

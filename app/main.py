@@ -38,9 +38,10 @@ def identity() -> dict:
 
 # ── Routes ──────────────────────────────────────────────────────
 from app.api import (  # noqa: E402
-    routes_agent, routes_approval, routes_behavior, routes_chat,
-    routes_decision, routes_emotion, routes_inner, routes_learning,
-    routes_memory, routes_projects, routes_reflection, routes_tody,
+    routes_actions, routes_agent, routes_approval, routes_behavior,
+    routes_chat, routes_decision, routes_emotion, routes_inner,
+    routes_learning, routes_memory, routes_projects, routes_reflection,
+    routes_tody,
 )
 
 protected = [Depends(require_internal_api_key)]
@@ -56,3 +57,4 @@ app.include_router(routes_learning.router, dependencies=protected)
 app.include_router(routes_emotion.router, dependencies=protected)
 app.include_router(routes_behavior.router, dependencies=protected)
 app.include_router(routes_inner.router, dependencies=protected)
+app.include_router(routes_actions.router, dependencies=protected)

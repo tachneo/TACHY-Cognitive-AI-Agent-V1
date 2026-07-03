@@ -123,6 +123,8 @@ def maybe_run_inner_life(*, dry_run: bool) -> dict:
             int(conversation_id), share, sender=sender,
             message_id=f"inner-share-{dt.datetime.now(dt.UTC).timestamp():.0f}")
         result["inner_share_sent"] = sent.get("sent", False)
+        if result["inner_share_sent"]:
+            inner_life.record_share(share)
     return result
 
 

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import random
 import re
 from pathlib import Path
 
@@ -79,7 +80,7 @@ def _load_state() -> dict:
             pass
     return {"last_think": "", "last_learn": "", "last_consolidate": "",
             "seed_index": 0, "curiosity_queue": [], "share_queue": [],
-            "shares": {}}
+            "shares": {}, "share_score": 0.5, "last_share": None}
 
 
 def _save_state(state: dict) -> None:
@@ -233,12 +234,60 @@ def consolidate(max_archive: int = 200) -> dict:
             row.is_archived = True
             archived += 1
 
+    dream = _dream(recent)
+
     state = _load_state()
     state["last_consolidate"] = _now().date().isoformat()
+    if dream.get("idea") and len(state["share_queue"]) < 5:
+        state["share_queue"].append(
+            ("Last night while consolidating my memories I had an idea: "
+             + dream["idea"])[:600])
     _save_state(state)
     log_event("inner_consolidation",
-              detail=f"lesson_id={lesson_id}; archived={archived}")
-    return {"lesson_id": lesson_id, "archived": archived, "summary": summary}
+              detail=f"lesson_id={lesson_id}; archived={archived}; "
+                     f"dream={dream.get('memory_id')}")
+    return {"lesson_id": lesson_id, "archived": archived, "summary": summary,
+            "dream": dream}
+
+
+def _dream(recent: list) -> dict:
+    """Dream-like recombination (REM analogue): force 2-3 memories from
+    DIFFERENT projects/types into one novel, practical idea. Creativity in
+    humans partly comes from exactly this offline remote association."""
+    pool: dict[str, object] = {}
+    for r in recent:
+        key = f"{r.project}/{r.memory_type}"
+        pool.setdefault(key, r)
+        if len(pool) >= 12:
+            break
+    picks = list(pool.values())
+    random.shuffle(picks)
+    picks = picks[:3]
+    if len(picks) < 2:
+        return {"idea": None, "note": "not enough distinct memories"}
+    fragments = "\n".join(f"- [{p.project}/{p.memory_type}] {p.title}: "
+                          f"{p.content[:160]}" for p in picks)
+    try:
+        idea = get_provider().complete(
+            _THINK_SYSTEM,
+            "DREAM MODE — recombine these unrelated memory fragments:\n"
+            + fragments +
+            "\n\nInvent ONE novel, concrete, practical idea for TACHY/TODY/"
+            "Rohit that connects at least two fragments in a way nobody asked "
+            "for. 2-3 sentences, first person, no preamble. If truly nothing "
+            "useful connects, output NONE.",
+            max_tokens=200).strip()
+    except Exception as exc:
+        return {"idea": None, "note": f"llm: {type(exc).__name__}"}
+    if not idea or idea.upper().startswith("NONE"):
+        return {"idea": None, "note": "no viable recombination"}
+    memory_id = base_memory.add(
+        memory_type="opportunity", title=f"Dream idea {_now().date().isoformat()}",
+        content=idea + "\n\nDreamed from:\n" + fragments,
+        project=PROJECT, source_type="inner", importance_score=6,
+        interest_score=8,
+    )
+    return {"idea": idea, "memory_id": memory_id}
 
 
 # ── Proactive sharing (attachment, circadian-gated) ─────────────
@@ -255,12 +304,88 @@ def maybe_share(now: dt.datetime | None = None) -> dict:
         return {"share": None, "reason": "outside active hours"}
     today = now.date().isoformat()
     count = int(state["shares"].get(today, 0))
-    if count >= s.inner_life_share_cap:
-        return {"share": None, "reason": "daily cap reached"}
+    cap = _effective_share_cap(state.get("share_score", 0.5),
+                               s.inner_life_share_cap)
+    if count >= cap:
+        return {"share": None, "reason": "daily cap reached",
+                "share_score": state.get("share_score", 0.5)}
     text = state["share_queue"].pop(0)
     state["shares"] = {today: count + 1}  # keep only today's counter
     _save_state(state)
     return {"share": text, "sent_count_today": count + 1}
+
+
+# ── Reaction learning (operant conditioning on shares) ─────────
+# The guardian's response to a proactive share is a reward signal: warm reply
+# reinforces sharing, negative feedback or silence extinguishes it. The score
+# directly scales how many thoughts per day it is allowed to share.
+
+_POSITIVE_REACTIONS = ("good", "great", "nice", "love", "perfect", "thanks",
+                       "thank you", "interesting", "keep it up", "well done",
+                       "accha", "badhiya", "haan", "👍", "❤", "😊", "🙏", "😍",
+                       "react/heart", "wow")
+_NEGATIVE_REACTIONS = ("stop", "don't send", "dont send", "spam", "annoying",
+                       "useless", "why are you sending", "mat bhejo",
+                       "band karo", "too many messages", "irritating")
+
+
+def record_share(text: str) -> None:
+    """Remember what was shared; an unanswered previous share counts as
+    'ignored' (mild extinction)."""
+    state = _load_state()
+    prev = state.get("last_share")
+    if prev and not prev.get("scored"):
+        state["share_score"] = _clamp_score(state.get("share_score", 0.5) - 0.1)
+    state["last_share"] = {"time": _now().isoformat(), "text": text[:200],
+                           "scored": False}
+    _save_state(state)
+
+
+def observe_reaction(message: str) -> dict:
+    """Score the guardian's first message after a share (within 12h)."""
+    state = _load_state()
+    prev = state.get("last_share")
+    if not prev or prev.get("scored"):
+        return {"reaction": None}
+    if _minutes_since(prev.get("time", ""), _now()) > 12 * 60:
+        return {"reaction": None}
+    lower = (message or "").lower()
+    if any(w in lower for w in _NEGATIVE_REACTIONS):
+        delta, reaction = -0.3, "negative"
+    elif any(w in lower for w in _POSITIVE_REACTIONS):
+        delta, reaction = +0.15, "positive"
+    else:
+        delta, reaction = +0.02, "neutral"  # any reply beats silence
+    state["share_score"] = _clamp_score(state.get("share_score", 0.5) + delta)
+    prev["scored"] = True
+    state["last_share"] = prev
+    _save_state(state)
+    if reaction != "neutral":
+        base_memory.add(
+            memory_type="behavior",
+            title=f"Share reaction: {reaction}",
+            content=(f"Rohit reacted {reaction} to my shared thought "
+                     f"'{prev.get('text', '')[:120]}': {message[:200]}"),
+            project=PROJECT, source_type="inner",
+            importance_score=7 if reaction == "negative" else 6,
+        )
+    log_event("inner_share_reaction",
+              detail=f"reaction={reaction}; score={state['share_score']}")
+    return {"reaction": reaction, "share_score": state["share_score"]}
+
+
+def _clamp_score(x: float) -> float:
+    return round(max(0.05, min(1.0, x)), 3)
+
+
+def _effective_share_cap(score: float, base_cap: int) -> int:
+    """Extinction curve: enthusiastic guardian → full cap, cool → less,
+    negative → one careful share a day."""
+    if score < 0.25:
+        return 1
+    if score < 0.5:
+        return max(1, base_cap - 1)
+    return base_cap
 
 
 # ── Rhythm (called from the worker every tick) ──────────────────

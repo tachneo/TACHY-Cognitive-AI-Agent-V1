@@ -17,6 +17,58 @@ This is not a chatbot-first project. The brain core must own memory, goals,
 planning, safety, audit, and learning. Agents and tools stay below the brain as
 controlled workers.
 
+## 2026-07-03 - Phases 1U + 1V + 1E: Reaction Learning, Dreams, Controlled Automation
+
+### Completed
+
+- **1U Reaction learning (operant conditioning)** in `inner_life.py`:
+  `record_share()` after each proactive share; `observe_reaction()` scores the
+  guardian's first message within 12h (positive words/emoji +0.15, negative
+  "stop/spam/mat bhejo" −0.3, any reply +0.02, silence before next share
+  −0.1) into a persistent `share_score` (0.05–1.0); the effective daily share
+  cap scales with it (<0.25 → 1/day, <0.5 → cap−1, else full cap) —
+  enthusiasm reinforces sharing, annoyance extinguishes it. Non-neutral
+  reactions stored as behavior memories. Hooked in tody_agent for guardian
+  inbound + worker after successful share.
+- **1V Dream recombination (REM analogue)** in `consolidate()`: picks up to 3
+  memories from DIFFERENT project/type buckets, shuffles, and asks the inner
+  voice to force a novel practical connection; viable ideas stored as
+  `opportunity` memories ("Dream idea YYYY-MM-DD") and queued as a morning
+  share ("Last night while consolidating my memories I had an idea: …");
+  NONE answers discarded.
+- **1E Controlled automation** — `app/brain/action_engine.py`:
+  - Whitelisted registry (learn_topic, assign_homework, create_goal,
+    daily_reflection = low; consolidate_memory = medium; send_tody_message =
+    high). Unknown actions rejected + audit-logged.
+  - `propose()`: low-risk executes immediately; medium/high creates a
+    payload-bound `brain_action` approval. `execute_approved()` re-validates
+    status/action/payload before running. Every execution audit-logged +
+    stored as decision memory (project AUTOMATION).
+  - **Guardian chat commands on TODY** (deterministic, LLM bypassed):
+    `pending` lists approvals, `approve <id>` approves AND executes (brain
+    actions via the registry, send_message via the payload-bound
+    execute_send), `reject <id>` declines. Guardian-only.
+  - Routes: `GET /actions/registry`, `POST /actions/propose`,
+    `POST /actions/execute/{id}`.
+- Added `tests/test_phase1u_reaction_dreams_actions.py` (13 tests).
+
+### Verified
+
+```bash
+.venv/bin/pytest -q -p no:cacheprovider   # 176 passed
+```
+
+Live: registry served; low-risk `create_goal` executed instantly (goal #1);
+medium `consolidate_memory` queued as approval #115 → chat command `pending`
+listed it → `approve 115` executed it (lesson 713 + a dream idea generated).
+Old Phase-1D pending send approvals are now resolvable from chat too.
+
+### Next Recommended Phase
+
+1F self-improvement (evaluate its own reply quality over time), richer action
+registry (ERP read-only reports, TODY feed posts), and multi-step plans
+(propose a chain of actions as one approval).
+
 ## 2026-07-03 - Phase 1T Inner Life (default-mode network)
 
 ### Design (neuroscience/psychology grounding)
@@ -501,7 +553,7 @@ The model can be changed by `.env` without code changes.
 | 1B | Memory/priority/decision | Partial | SQLite persistence and tests exist; retrieval must influence every response. |
 | 1C | Skill agents | Partial | Coding/security/business agents exist; ERP/TODY need deeper controlled workflows. |
 | 1D | TODY connection | Partial | Read/write client exists; outbound actions are approval-gated. |
-| 1E | Controlled automation | Not started | Requires stronger auth, payload-bound approvals, dry-run, audit, rollback plans. |
+| 1E | Controlled automation | Done | Whitelisted action registry, risk-tiered (low executes / medium+high approval-gated, payload-bound), guardian chat commands (pending/approve/reject on TODY), audit + decision memory, /actions routes. |
 | 1F | Continuous self-improvement | Not started | Needs evaluation, feedback learning, memory confidence/decay. |
 | 1G | Human behavior learning | Partial | Deterministic tone/emotion/humor/preference extraction now persists to memory and grounds replies. |
 | 1H | Goal/personality formation | Partial | Goals, personality synthesis, feedback commands, and safe TODY reply drafting are implemented. |
@@ -517,6 +569,8 @@ The model can be changed by `.env` without code changes.
 | 1R | TODY conversation quality | Done | Field-driven: greeting/realtime/self-emotion intents, 3-layer anti-repetition, live web answers with sources, LLM-error send guard, User/You context, hermetic test LLM. |
 | 1S | Human chat feel + clock | Done | Real IST clock in every prompt + datetime intent, honest search claims + freshness dating, chat-style output (no markdown/closers/name-openers), multi-bubble typing with pauses, presence honesty, style-feedback learning. |
 | 1T | Inner life (DMN) | Done | Autonomous think/learn/consolidate/share rhythm: rotating-seed inner thoughts → belief memories, self-generated curiosity questions → continuous web learning, nightly consolidation + forgetting, savoring/gratitude mood lift, circadian-gated proactive shares to guardian. |
+| 1U | Reaction learning | Done | Operant conditioning on shares: guardian's reply sentiment (or silence) tunes share_score → scales daily share cap; reactions stored as behavior memory. |
+| 1V | Dream recombination | Done | Nightly REM analogue: cross-project memory fragments recombined into novel opportunity-memory ideas, queued as morning shares. |
 | 2A | Mother-care/Gita growth | Partial | Care profile, homework, daily skill learning, dharma check, and TODY growth report are implemented. |
 | 2B | Child-like curiosity | Partial | Proactive question/check-in behavior and daily curiosity messages are implemented. |
 | 2 | Internet observation | Not started | Add safe read-only research agent, source trust, freshness, fact memory. |
