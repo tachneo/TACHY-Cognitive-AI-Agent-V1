@@ -4,10 +4,16 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.brain import behavior_engine, emotion_engine
+from app.brain import behavior_engine, emotion_engine, teacher_learning
 from app.brain.attention_system import Signals
 
 router = APIRouter(prefix="/behavior", tags=["behavior"])
+
+
+@router.get("/learned")
+def learned() -> dict:
+    """What the brain has learned from the LLM for offline reuse (Phase 1X)."""
+    return teacher_learning.stats()
 
 
 class AnalyzeIn(BaseModel):

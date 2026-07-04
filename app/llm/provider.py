@@ -28,30 +28,17 @@ class HeuristicProvider:
 
     def complete(self, system: str, prompt: str, max_tokens: int = 800) -> str:
         message = _extract_user_message(prompt)
-        lower = message.lower()
-        if lower in {"hi", "hii", "hello", "hey", "namaste"}:
-            return (
-                "Hi Rohit, I am live on TODY now. I can read your messages, "
-                "remember this conversation, and reply through the supervised brain worker. "
-                "My deeper reasoning will improve once a real LLM API key is configured."
-            )
-        if "status" in lower:
-            return (
-                "Current status: the TACHY Cognitive AI service is running, TODY login works, "
-                "Rohit's TODY identity is trusted, and the worker can process messages. "
-                "I am still using the offline reasoning fallback until an LLM key is added."
-            )
-        if "agi" in lower or "brain" in lower:
-            return (
-                "For the AGI brain, my current stage is controlled newborn learning: memory, "
-                "goals, personality signals, dialogue continuity, TODY conversation, and safety gates. "
-                "Next growth should focus on world model, planning, stronger memory intelligence, "
-                "and real model-backed reasoning."
-            )
+        lower = message.lower().strip()
+        if lower in {"hi", "hii", "hello", "hey", "namaste"} or lower.startswith(
+                ("how are you", "kaise ho")):
+            return "Hey! Good to hear from you. What's on your mind?"
+        if lower.startswith(("thank", "thanks")):
+            return "Anytime — glad it helped."
+        # Natural, honest, NEVER leaks the prompt or begs for an API key.
         return (
-            f"I understood: {message[:180] or 'your message'}. "
-            "I will answer directly, remember useful context, and keep production-risk actions safe. "
-            "For deeper intelligence, configure the LLM API key so I can reason beyond this local fallback."
+            "I hear you. My deeper reasoning model is offline at the moment, so "
+            "I'm keeping this short — I've noted it and can go fuller once I'm "
+            "back to full strength."
         )
 
 
@@ -140,8 +127,9 @@ def get_provider() -> Provider:
 
 
 def _extract_user_message(prompt: str) -> str:
-    match = re.search(r"User message \\([^)]*\\):\\s*(.*?)(?:\\n\\n|$)", prompt, re.S)
-    if match:
-        return match.group(1).strip()
+    # Take the LAST "User message (...): <text>" occurrence, up to a blank line.
+    matches = re.findall(r"User message \([^)]*\):\s*(.*?)(?:\n\n|\Z)", prompt, re.S)
+    if matches:
+        return matches[-1].strip()
     lines = [line.strip() for line in prompt.splitlines() if line.strip()]
-    return lines[0] if lines else ""
+    return lines[-1] if lines else ""

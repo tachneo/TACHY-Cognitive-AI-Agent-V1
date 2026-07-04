@@ -17,6 +17,66 @@ This is not a chatbot-first project. The brain core must own memory, goals,
 planning, safety, audit, and learning. Agents and tools stay below the brain as
 controlled workers.
 
+## 2026-07-04 - Phase 1X + 1Y: Teacher-Student Learning, Smart Offline, Learn-While-Talking
+
+### Trigger
+
+TODY went silent (HF credits exhausted + login rate-limit). Root fixes shipped
+separately (token persistence, graceful degrade). Rohit then asked: the brain
+should (a) still talk well OFFLINE with no LLM, (b) LEARN from the LLM when it
+is there, and (c) explore the internet BY ITSELF during conversation when he
+asks something it doesn't know — with an AGI / human-like learning nature.
+
+### Completed
+
+- **1X Teacher-student learning** — `app/brain/teacher_learning.py`: when a real
+  LLM ("teacher") answers, the exchange is stored (procedural memory, project
+  LEARNED_DIALOGUE, title=question, content=answer). `recall_reply()` matches a
+  new question by Jaccard over meaningful tokens. Time-sensitive intents
+  (realtime/datetime/third-party) are NOT cached. Wired into the cognitive
+  loop: real LLM → answer + cache; offline → the loop composes from clock +
+  taught answers + remembered knowledge instead of going mute.
+- **Smart offline talking** — rewrote `HeuristicProvider` (fixed message
+  extraction to the LAST "User message (...):"; natural greeting/thanks; no
+  more prompt-leak or "configure the LLM API key" text) + `_offline_reply()`:
+  greetings, real-clock datetime answers, taught-answer reuse, remembered
+  knowledge (internal log rows filtered), and an honest+curious fallback.
+- **1Y Learn-while-talking / self-directed web exploration** —
+  `_should_learn_live()` detects a knowledge gap (learning/factual intent +
+  weak memory recall). When an LLM is present, the loop fetches the topic from
+  the web (SSRF-guarded web_explorer, query stripped of "explain/what is/tell
+  me about…" so it searches the TOPIC), grounds the answer in the fetched
+  facts, then `_learn_from_conversation()` stores it as semantic knowledge,
+  caches it for offline reuse, and queues a deeper-study question into the
+  inner-life curiosity loop. Offline, it can't interpret pages, so it stays
+  honest and just queues the curiosity for later autonomous study.
+- **AGI / human learning nature** — SYSTEM_PERSONALITY now states the brain
+  learns like a growing human mind: curious, learns from every conversation
+  and the internet, remembers, connects new facts, grows, and shows genuine
+  curiosity (saying when it just learned something).
+- Config kill switches: `TEACHER_LEARNING_ENABLED`,
+  `CONVERSATIONAL_LEARNING_ENABLED`. Route `GET /behavior/learned` (what it has
+  learned for offline use).
+- Added `tests/test_phase1x_teacher_offline.py` (15) +
+  `tests/test_phase1y_conversational_learning.py` (8). Total suite 209 pass.
+
+### Verified
+
+Live (offline, no LLM key): "hi" → natural greeting; "what is today date and
+time" → exact IST from the real clock; unknown question → clean, honest,
+curious reply with the topic queued into the inner-life curiosity loop for
+autonomous study. When an LLM key is added, the same unknown question fetches
+the topic, answers grounded in sources, and remembers it for next time.
+
+Note: a buggy pre-fix test run had cached junk into LEARNED_DIALOGUE; those
+poisoned rows were archived, and offline no longer caches (only the LLM
+teaches), so it cannot repollute.
+
+### Next Recommended Phase
+
+Better offline knowledge from the taught corpus (semantic recall over learned
+answers), and — once the Anthropic key is in — watch the teacher corpus grow.
+
 ## 2026-07-03 - Phase 1W Capability Honesty (stop faking actions)
 
 ### Trigger
@@ -687,6 +747,8 @@ web parser tests passed.
 | 1U | Reaction learning | Done | Operant conditioning on shares: guardian's reply sentiment (or silence) tunes share_score → scales daily share cap; reactions stored as behavior memory. |
 | 1V | Dream recombination | Done | Nightly REM analogue: cross-project memory fragments recombined into novel opportunity-memory ideas, queued as morning shares. |
 | 1W | Capability honesty | Done | third_party_action intent + capability CAN/CANNOT prompt block + claims_false_send() backstop: brain stops hallucinating "I'll send it to @X", tells the truth and offers to draft. |
+| 1X | Teacher-student + smart offline | Done | Learns LLM answers for offline reuse; offline talks naturally (clock/taught answers/memory), no prompt-leak or API-key begging. |
+| 1Y | Learn-while-talking | Done | Detects a knowledge gap mid-chat, explores the web by itself, answers grounded, remembers it, and queues deeper self-study (human-like learning nature). |
 | 2A | Mother-care/Gita growth | Partial | Care profile, homework, daily skill learning, dharma check, and TODY growth report are implemented. |
 | 2B | Child-like curiosity | Partial | Proactive question/check-in behavior and daily curiosity messages are implemented. |
 | 2 | Internet observation | Not started | Add safe read-only research agent, source trust, freshness, fact memory. |

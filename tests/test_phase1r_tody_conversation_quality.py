@@ -61,6 +61,14 @@ def test_live_lookup_runs_for_realtime_intent(monkeypatch):
              "text": "24k gold price today is X per 10g"}]}
 
     import app.brain.cognitive_loop as loop
+
+    class _LLM:  # a real (non-offline) provider is needed to interpret the fetch
+        name = "fake"
+
+        def complete(self, system, prompt, max_tokens=800):
+            return "The gold rate today is X."
+
+    monkeypatch.setattr(loop, "get_provider", lambda: _LLM())
     monkeypatch.setattr(loop, "_live_web_lookup", fake_lookup)
     result = loop.process("tell me gold price in india today")
     assert calls, "live lookup was not triggered"
@@ -74,7 +82,8 @@ def test_live_lookup_skipped_for_normal_messages(monkeypatch):
         raise AssertionError("lookup must not run")
 
     monkeypatch.setattr(loop, "_live_web_lookup", boom)
-    result = loop.process("explain the fee module design")
+    # A greeting is not a knowledge gap → no web lookup (1R + 1Y).
+    result = loop.process("hi, good morning")
     assert result["live_web"] is None
 
 

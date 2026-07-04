@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     # Behavior engine (Phase 1Q) — human conversation layer.
     behavior_engine_enabled: bool = True
 
+    # Teacher-student learning (Phase 1X) — learn LLM answers for offline reuse.
+    teacher_learning_enabled: bool = True
+
+    # Conversational learning (Phase 1Y) — explore the web mid-chat on a
+    # knowledge gap, learn the answer, and stay curious to study it deeper.
+    conversational_learning_enabled: bool = True
+
     # Inner life (Phase 1T) — autonomous thinking/learning/sharing rhythm.
     inner_life_enabled: bool = True
     inner_life_think_minutes: int = 45

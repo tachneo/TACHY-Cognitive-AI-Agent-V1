@@ -14,13 +14,15 @@ import re
 from dataclasses import asdict
 
 from app.brain import (behavior_engine, emotion_engine, identity_core,
-                       interest_system, need_system, self_review)
+                       interest_system, need_system, self_review,
+                       teacher_learning)
 from app.brain.attention_system import Signals, attention_band, priority_score
 from app.brain.decision_engine import as_dict as decision_dict
 from app.brain.decision_engine import decide
 from app.brain.feedback import apply_feedback
 from app.brain.learning_engine import learn
 from app.brain.nurture_engine import dharma_check
+from app.config import get_settings
 from app.llm.provider import get_provider
 from app.memory.behavior_memory import recall_preferences
 
@@ -68,17 +70,32 @@ def process(message: str, signals: Signals | None = None,
     # BEHAVIOR — understand the person behind the message (Phase 1Q)
     behavior = behavior_engine.analyze(message, signals, emotion, channel=channel)
 
-    # LIVE WEB — real-time factual questions get real fetched data (Phase 1R)
+    # LIVE WEB — real-time questions (1R) OR a knowledge gap mid-chat (1Y):
+    # when the brain doesn't know something, it explores the internet itself.
+    # Only worth fetching when an LLM is present to interpret the page text;
+    # offline we stay honest and just get curious for later self-study.
     live_web = None
-    if (behavior.get("enabled")
-            and behavior["state"]["next_action"] == "realtime_lookup"
-            and behavior["state"]["risk_level"] == "low"):
-        live_web = _live_web_lookup(message)
+    offline = getattr(get_provider(), "name", "llm") == "heuristic"
+    state = behavior.get("state", {}) if behavior.get("enabled") else {}
+    learn_live = _should_learn_live(message, state, decision_d)
+    if not offline and behavior.get("enabled") and state.get("risk_level") != "high":
+        if (state.get("next_action") == "realtime_lookup"
+                and state.get("risk_level") == "low") or learn_live:
+            live_web = _live_web_lookup(message)
 
     # ACTION (LLM reply, grounded by decision + memory + emotion + behavior)
     reply = _draft_reply(message, band, decision_d, context=context, dharma=dharma,
                          emotion=emotion, behavior=behavior, live_web=live_web,
                          channel=channel)
+
+    # LEARN-WHILE-TALKING — remember what was just learned + get curious (1Y)
+    conversation_learning = None
+    if learn_live and not offline and live_web and live_web.get("fetched"):
+        conversation_learning = _learn_from_conversation(message, reply, live_web)
+    elif learn_live and offline:
+        # No model to explain it now, but stay curious — queue it for the
+        # inner-life loop to study properly later.
+        _queue_curiosity(message.strip()[:80])
 
     # REVIEW
     review = self_review.review(message=message, reply=reply, decision=decision_d)
@@ -104,11 +121,83 @@ def process(message: str, signals: Signals | None = None,
         "emotion": emotion,
         "behavior": behavior,
         "live_web": live_web,
+        "conversation_learning": conversation_learning,
         "reply": reply,
         "feedback": feedback,
         "self_review": review,
         "learning": learned,
     }
+
+
+# ── Learn-while-talking (Phase 1Y) ──────────────────────────────
+
+_FACTUAL_CUES = (
+    "what is", "what are", "what's", "who is", "who are", "who was",
+    "tell me about", "explain", "how does", "how do", "how is", "why does",
+    "why is", "define", "meaning of", "difference between", "kya hai",
+    "kya hota", "kaun hai", "batao about", "teach me",
+)
+
+
+def _should_learn_live(message: str, state: dict, decision: dict) -> bool:
+    """True when this is a knowledge question the brain doesn't already know —
+    so it should go learn the answer from the internet, like a curious human."""
+    if not get_settings().conversational_learning_enabled or not state:
+        return False
+    if state.get("user_intent") not in {"learning", "question"}:
+        return False
+    lower = (message or "").lower().strip()
+    is_factual = (state.get("user_intent") == "learning"
+                  or any(cue in lower for cue in _FACTUAL_CUES)
+                  or lower.endswith("?"))
+    if not is_factual:
+        return False
+    # Only when memory is weak on it — a real knowledge gap, not a re-ask.
+    recalled = decision.get("recalled", []) or []
+    already_known = any((m.get("score") or 0) >= 3 for m in recalled)
+    return not already_known
+
+
+def _learn_from_conversation(message: str, reply: str, live_web: dict) -> dict:
+    """Persist what was just learned from the web mid-chat, and queue the topic
+    for deeper self-directed study later (curiosity)."""
+    from app.brain import teacher_learning, web_learning
+    from app.memory import semantic_memory
+
+    topic = _QUERY_FILLER.sub(" ", message)
+    topic = re.sub(r"\s+", " ", topic).strip(" ?.!")[:80] or message.strip()[:80]
+    sources = "\n".join(f"- {s.get('title') or s.get('url')}: {s.get('url')}"
+                        for s in live_web.get("sources", []))
+    memory_id = semantic_memory.remember_fact(
+        title=f"Learned while talking: {topic}",
+        content=f"{reply}\n\nSources:\n{sources}",
+        topic=topic, source_type="conversation",
+        project=web_learning.PROJECT, importance=6,
+        lesson_learned=reply[:800],
+    )
+    # Also cache the answer for instant offline reuse next time (teacher path).
+    teacher_learning.remember_exchange(message=message, reply=reply, importance=6)
+    # Stay curious: queue a deeper study of this topic for the inner-life loop.
+    queued = _queue_curiosity(topic)
+    return {"learned": True, "topic": topic, "memory_id": memory_id,
+            "curiosity_queued": queued, "sources": len(live_web.get("sources", []))}
+
+
+def _queue_curiosity(topic: str) -> bool:
+    """Push a deeper-study question into the inner-life curiosity queue."""
+    try:
+        from app.brain import inner_life
+        state = inner_life._load_state()
+        q = f"deeper important facts about {topic}"
+        queue = state.get("curiosity_queue", [])
+        if q not in queue and len(queue) < 20:
+            queue.append(q)
+            state["curiosity_queue"] = queue
+            inner_life._save_state(state)
+            return True
+    except Exception:
+        pass
+    return False
 
 
 _QUERY_FILLER = re.compile(
@@ -128,7 +217,17 @@ def _live_web_lookup(message: str, max_pages: int = 2) -> dict:
     # Strip command filler so the engine searches the topic, not the request
     # ("check on internet ... gold price today" → "gold price today").
     query = _QUERY_FILLER.sub(" ", message)
-    query = re.sub(r"\s+", " ", query).strip(" ?.!")[:150] or message.strip()[:150]
+    query = re.sub(r"\s+", " ", query).strip(" ?.!")
+    # Strip leading question words so "explain what a vector database is" →
+    # "vector database" (a topic search), not a dictionary lookup of "explain".
+    _LEAD = re.compile(
+        r"^(what|whats|what's|who|how|why|when|where|explain|define|tell|is|are|"
+        r"was|were|a|an|the|does|do|of|about|meaning|kya|hai|hota)\b\s*", re.I)
+    prev = None
+    while prev != query:
+        prev = query
+        query = _LEAD.sub("", query)
+    query = query.strip()[:150] or message.strip()[:150]
     try:
         results = web_explorer.search_web(query, max_results=max_pages * 4)
     except Exception:
@@ -242,23 +341,68 @@ def _draft_reply(message: str, band: str, decision: dict,
         prompt += ("Write a concise, practical reply with a clear next step. "
                    "Adapt tone to learned preferences, but do not fake certainty "
                    "or claim actions were done.")
-    try:
-        reply = get_provider().complete(system, prompt, max_tokens=max_tokens)
-        if behavior and behavior.get("enabled"):
-            reply = behavior_engine.humanize(reply, chat=(channel == "chat"))
-        return reply
-    except Exception as exc:  # configured LLM down (e.g. out of credits / 401)
-        # Degrade to the offline heuristic provider so the brain still TALKS
-        # instead of going silent. Better a basic honest reply than muteness.
-        from app.llm.provider import HeuristicProvider
+
+    intent = (behavior or {}).get("state", {}).get("user_intent", "")
+    # Don't cache time-sensitive or one-off answers — they must not be replayed.
+    cacheable = intent not in {"realtime_lookup", "datetime", "third_party_action"}
+
+    provider = get_provider()
+    if getattr(provider, "name", "llm") != "heuristic":  # a real LLM ("teacher")
         try:
-            reply = HeuristicProvider().complete(system, prompt, max_tokens=max_tokens)
+            reply = provider.complete(system, prompt, max_tokens=max_tokens)
             if behavior and behavior.get("enabled"):
                 reply = behavior_engine.humanize(reply, chat=(channel == "chat"))
+            if cacheable and reply and not reply.startswith("[reply fallback"):
+                teacher_learning.remember_exchange(message=message, reply=reply)
             return reply
-        except Exception:
-            return (
-                f"[reply fallback — LLM provider error: {type(exc).__name__}]\n"
-                f"Plan: {decision['chosen']} (project {decision['project']}, "
-                f"risk {decision['risk_tier']})."
-            )
+        except Exception:  # LLM down (credits/401/network) → fall through offline
+            pass
+
+    # OFFLINE path: no LLM, or the teacher failed. Talk from what we've learned.
+    return _offline_reply(message, decision, behavior, intent, cacheable, channel)
+
+
+def _offline_reply(message: str, decision: dict, behavior: dict | None,
+                   intent: str, cacheable: bool, channel: str | None) -> str:
+    """Compose a natural reply with NO live model — from the clock, answers the
+    LLM taught earlier, and remembered knowledge. Never leaks internals or
+    begs for an API key."""
+    chat = channel == "chat"
+
+    def _finish(text: str) -> str:
+        if behavior and behavior.get("enabled"):
+            return behavior_engine.humanize(text, chat=chat)
+        return text
+
+    lower = (message or "").lower().strip()
+    if lower in {"hi", "hii", "hello", "hey", "namaste"} or lower.startswith(
+            ("how are you", "kaise ho")):
+        return _finish("Hey! Good to hear from you. What's on your mind?")
+
+    # Answerable truthfully offline from the real clock.
+    if intent == "datetime":
+        return _finish(f"It's {_now_line()} right now.")
+
+    # Reuse a good answer the LLM taught me to a similar question earlier.
+    learned = teacher_learning.recall_reply(message, min_score=0.5)
+    if learned:
+        return _finish(learned["reply"])
+
+    if not cacheable:  # realtime lookup / third-party — be honest, don't fake it
+        return _finish(
+            "My main reasoning model is offline right now, so I can't pull that "
+            "for you this moment. Try me again shortly and I'll get it.")
+
+    # Ground a fresh reply in real remembered KNOWLEDGE (skip internal log rows).
+    recalled = decision.get("recalled", [])
+    facts = [m["title"] for m in recalled
+             if m.get("title") and ":" not in m["title"]
+             and "draft_outbound" not in m["title"]][:3]
+    if facts:
+        return _finish("From what I remember: " + "; ".join(facts)
+                       + ". My deeper reasoning is offline right now, so ask me "
+                       "again in a bit if you want me to go further.")
+    return _finish(
+        "I hear you — that's a good question. My deeper reasoning model is "
+        "offline at the moment, so I've saved it and I'm curious to study it; "
+        "ask me again shortly and I'll give you a proper answer.")

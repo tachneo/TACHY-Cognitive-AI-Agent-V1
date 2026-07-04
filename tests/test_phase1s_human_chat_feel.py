@@ -63,8 +63,13 @@ def test_no_lookup_prompt_forbids_checked_claims(monkeypatch):
 
     import app.brain.cognitive_loop as loop
     monkeypatch.setattr(loop, "get_provider", lambda: FakeProvider())
-    loop.process("tell me about the erp fee module")
+    # Disable mid-chat web learning so no lookup runs for this assertion.
+    monkeypatch.setenv("CONVERSATIONAL_LEARNING_ENABLED", "false")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    loop.process("write complete code for the fee module")
     assert "NEVER claim you checked" in captured["prompt"]
+    get_settings.cache_clear()
 
 
 def test_new_model_questions_trigger_lookup():
