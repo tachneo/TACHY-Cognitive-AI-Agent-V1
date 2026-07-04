@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     tody_api_base: str = "https://api.tody.in/api"
     tody_email: str = ""
     tody_password: str = ""
+    tody_token_path: str = "storage/logs/tody_tokens.json"
 
     # Behavior engine (Phase 1Q) — human conversation layer.
     behavior_engine_enabled: bool = True

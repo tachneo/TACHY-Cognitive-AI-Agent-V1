@@ -598,6 +598,67 @@ interface. `openai/gpt-oss-120b` was tested but returned empty content through
 the current router path; `Qwen/Qwen2.5-72B-Instruct` returned usable chat text.
 The model can be changed by `.env` without code changes.
 
+## 2026-07-03 - TODY Reply Reliability Fix
+
+### Finding
+
+- `tachy-brain.service` and `tachy-tody-worker.service` were active.
+- Public health was OK.
+- The worker was polling TODY, but recent logs showed:
+
+```text
+Too many attempts. Please retry later.
+```
+
+- `storage/logs/tody_tokens.json` did not exist because `storage/logs` was not
+  writable by the `www-data` service user, so token persistence could not work.
+- The worker was also polling every 20 seconds with a 300-second error backoff,
+  which is too aggressive when TODY rate-limits auth/API attempts.
+
+### Completed
+
+- Added configurable `TODY_TOKEN_PATH`.
+- Updated `TodyClient` to use the configured token cache path.
+- Increased safe worker defaults:
+  - `TODY_WORKER_INTERVAL=90`
+  - `TODY_WORKER_ERROR_BACKOFF=1800`
+  - `TODY_WORKER_RATE_LIMIT_BACKOFF=3600`
+- Updated the systemd worker template to use the slower interval/backoff.
+- Added token persistence tests in `tests/test_phase1x_tody_client_tokens.py`.
+- Added worker default tests in `tests/test_phase1m_operator.py`.
+
+### Verification
+
+Focused TODY tests passed:
+
+```bash
+cd /var/www/maa.tachy.in
+.venv/bin/pytest -q -p no:cacheprovider tests/test_phase1m_operator.py tests/test_phase1x_tody_client_tokens.py
+```
+
+Result:
+
+```text
+8 passed
+```
+
+Full suite was not completed because `tests/test_phase1o_web_learning.py::test_learn_routes_mounted`
+hangs in the FastAPI TestClient route check. TODY-focused tests and the fixed
+web parser tests passed.
+
+### Live Status
+
+- Installed the updated `tachy-tody-worker.service` unit.
+- Reloaded systemd and restarted only `tachy-tody-worker.service`.
+- Worker command now uses:
+  - `--interval 90`
+  - `--error-backoff 1800`
+- Live worker hit TODY rate limit again at `2026-07-03T16:41:00Z` and is now
+  sleeping for `3600` seconds before retrying.
+- `storage/logs` is writable by the service process, verified with a
+  `www-data` write check. Token file will be created after the next successful
+  TODY auth/refresh.
+
 ## Phase Status
 
 | Phase | Name | Status | Notes |

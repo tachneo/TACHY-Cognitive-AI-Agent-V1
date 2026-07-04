@@ -10,13 +10,14 @@ approval workflow — the client itself stays a thin transport.
 """
 from __future__ import annotations
 
+import json
 import time
 import uuid
+from pathlib import Path
 
 import httpx
 
 from app.config import get_settings
-
 
 class TodyError(RuntimeError):
     pass
@@ -31,6 +32,10 @@ class TodyClient:
         self._access: str | None = None
         self._refresh: str | None = None
         self._expires_at: float = 0.0
+        # Persist tokens so service restarts do not create fresh login attempts.
+        self._token_path = Path(s.tody_token_path)
+        self._last_token_save_error: str | None = None
+        self._load_tokens()
 
     # ── auth ────────────────────────────────────────────────────
     def _post(self, path: str, json: dict, auth: bool = True) -> dict:
@@ -96,6 +101,30 @@ class TodyClient:
         self._access = tokens.get("access_token")
         self._refresh = tokens.get("refresh_token", self._refresh)
         self._expires_at = time.time() + int(tokens.get("expires_in", 3600))
+        self._save_tokens()
+
+    def _save_tokens(self) -> None:
+        try:
+            self._token_path.parent.mkdir(parents=True, exist_ok=True)
+            self._token_path.write_text(json.dumps({
+                "access": self._access, "refresh": self._refresh,
+                "expires_at": self._expires_at, "email": self._email,
+            }), encoding="utf-8")
+            self._last_token_save_error = None
+        except OSError as exc:
+            self._last_token_save_error = f"{type(exc).__name__}: {exc}"
+
+    def _load_tokens(self) -> None:
+        try:
+            data = json.loads(self._token_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        # Ignore a cache saved for a different account.
+        if data.get("email") and data["email"] != self._email:
+            return
+        self._access = data.get("access")
+        self._refresh = data.get("refresh")
+        self._expires_at = float(data.get("expires_at", 0.0))
 
     # ── read ────────────────────────────────────────────────────
     def me(self) -> dict:

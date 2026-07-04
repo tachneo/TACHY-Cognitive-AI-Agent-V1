@@ -5,7 +5,7 @@ After=network.target tachy-brain.service
 [Service]
 WorkingDirectory=/var/www/maa.tachy.in
 EnvironmentFile=/var/www/maa.tachy.in/.env
-ExecStart=/var/www/maa.tachy.in/.venv/bin/python -m app.scripts.tody_worker_loop --live --interval 20 --error-backoff 300
+ExecStart=/var/www/maa.tachy.in/.venv/bin/python -m app.scripts.tody_worker_loop --live --interval 90 --error-backoff 1800
 Restart=always
 RestartSec=10
 User=www-data

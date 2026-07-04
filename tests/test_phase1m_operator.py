@@ -16,6 +16,14 @@ def test_worker_loop_importable():
     assert callable(mod.main)
 
 
+def test_worker_loop_defaults_are_rate_limit_safe(monkeypatch):
+    from app.scripts import tody_worker_loop
+
+    assert tody_worker_loop.DEFAULT_WORKER_INTERVAL >= 90
+    assert tody_worker_loop.DEFAULT_ERROR_BACKOFF >= 1800
+    assert tody_worker_loop.DEFAULT_RATE_LIMIT_BACKOFF >= 3600
+
+
 def test_systemd_templates_exist():
     from pathlib import Path
 

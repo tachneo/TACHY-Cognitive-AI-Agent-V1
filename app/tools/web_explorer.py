@@ -199,6 +199,15 @@ def _decode_ddg_href(href: str) -> str:
     return href
 
 
+def _search_result_url_allowed(url: str) -> bool:
+    """Cheap parser-time filter; fetch_page still performs DNS SSRF checks."""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    return parsed.scheme in {"http", "https"} and bool(parsed.hostname)
+
+
 def parse_ddg_html(raw: str, max_results: int = 5) -> list[SearchResult]:
     links = _DDG_RESULT.findall(raw)
     snippets = [html_lib.unescape(_TAG_ANY.sub("", s)).strip()
@@ -206,7 +215,7 @@ def parse_ddg_html(raw: str, max_results: int = 5) -> list[SearchResult]:
     results: list[SearchResult] = []
     for i, (href, title_html) in enumerate(links):
         url = _decode_ddg_href(href)
-        if not check_url(url).allowed:
+        if not _search_result_url_allowed(url):
             continue
         title = html_lib.unescape(_TAG_ANY.sub("", title_html)).strip()
         snippet = snippets[i] if i < len(snippets) else ""
@@ -248,7 +257,7 @@ def parse_bing_html(raw: str, max_results: int = 5) -> list[SearchResult]:
     results: list[SearchResult] = []
     for href, title_html in _BING_RESULT.findall(raw):
         url = _decode_bing_href(href)
-        if not url or not check_url(url).allowed:
+        if not url or not _search_result_url_allowed(url):
             continue
         title = html_lib.unescape(_TAG_ANY.sub("", title_html)).strip()
         results.append(SearchResult(title=title, url=url))

@@ -247,9 +247,18 @@ def _draft_reply(message: str, band: str, decision: dict,
         if behavior and behavior.get("enabled"):
             reply = behavior_engine.humanize(reply, chat=(channel == "chat"))
         return reply
-    except Exception as exc:  # never let an LLM/network error break the loop
-        return (
-            f"[reply fallback — LLM provider error: {type(exc).__name__}]\n"
-            f"Plan: {decision['chosen']} (project {decision['project']}, "
-            f"risk {decision['risk_tier']})."
-        )
+    except Exception as exc:  # configured LLM down (e.g. out of credits / 401)
+        # Degrade to the offline heuristic provider so the brain still TALKS
+        # instead of going silent. Better a basic honest reply than muteness.
+        from app.llm.provider import HeuristicProvider
+        try:
+            reply = HeuristicProvider().complete(system, prompt, max_tokens=max_tokens)
+            if behavior and behavior.get("enabled"):
+                reply = behavior_engine.humanize(reply, chat=(channel == "chat"))
+            return reply
+        except Exception:
+            return (
+                f"[reply fallback — LLM provider error: {type(exc).__name__}]\n"
+                f"Plan: {decision['chosen']} (project {decision['project']}, "
+                f"risk {decision['risk_tier']})."
+            )

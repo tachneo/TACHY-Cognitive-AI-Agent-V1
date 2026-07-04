@@ -15,6 +15,10 @@ import time
 from app.agents import tody_agent
 from app.agents import tody_activation
 
+DEFAULT_WORKER_INTERVAL = 90
+DEFAULT_ERROR_BACKOFF = 1800
+DEFAULT_RATE_LIMIT_BACKOFF = 3600
+
 
 def _env_true(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
@@ -133,9 +137,9 @@ def main() -> int:
     parser.add_argument("--live", action="store_true",
                         help="Process one message per tick instead of dry-run")
     parser.add_argument("--interval", type=int,
-                        default=int(os.getenv("TODY_WORKER_INTERVAL", "20")))
+                        default=int(os.getenv("TODY_WORKER_INTERVAL", str(DEFAULT_WORKER_INTERVAL))))
     parser.add_argument("--error-backoff", type=int,
-                        default=int(os.getenv("TODY_WORKER_ERROR_BACKOFF", "300")))
+                        default=int(os.getenv("TODY_WORKER_ERROR_BACKOFF", str(DEFAULT_ERROR_BACKOFF))))
     parser.add_argument("--conversation-limit", type=int, default=10)
     parser.add_argument("--message-limit", type=int, default=10)
     args = parser.parse_args()
@@ -169,12 +173,18 @@ def main() -> int:
             print(result, flush=True)
             time.sleep(max(5, args.interval))
         except Exception as exc:
+            backoff = max(30, args.error_backoff)
+            if "Too many attempts" in str(exc):
+                backoff = max(
+                    backoff,
+                    int(os.getenv("TODY_WORKER_RATE_LIMIT_BACKOFF", str(DEFAULT_RATE_LIMIT_BACKOFF))),
+                )
             print(
                 {"worker_error": type(exc).__name__, "detail": str(exc),
-                 "backoff_seconds": max(30, args.error_backoff)},
+                 "backoff_seconds": backoff},
                 flush=True,
             )
-            time.sleep(max(30, args.error_backoff))
+            time.sleep(backoff)
 
 
 if __name__ == "__main__":
