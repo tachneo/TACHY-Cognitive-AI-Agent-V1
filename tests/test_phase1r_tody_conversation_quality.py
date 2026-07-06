@@ -15,7 +15,8 @@ def test_greeting_intent_short_friend():
         st = behavior_engine.read_state(msg)
         assert st.user_intent == "greeting", msg
         assert st.reply_depth == "short"
-        assert st.relationship_mode == "friend"
+        # Greetings now get Shree's daughter warmth.
+        assert st.relationship_mode == "daughter"
     text = behavior_engine.style_directives(behavior_engine.read_state("hi"))
     assert "just a greeting" in text.lower()
 

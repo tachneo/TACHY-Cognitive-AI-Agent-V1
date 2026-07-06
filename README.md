@@ -7,9 +7,9 @@
 - **Guardian / final authority:** Rohit Kumar (Founder of TODY, CTO/Head of Technology, TACHY EDTECH PRIVATE LIMITED)
 - **Domain:** maa.tachy.in
 - **Stack:** Python 3.12+, FastAPI, MySQL/PostgreSQL (SQLAlchemy), optional Redis (working memory) + vector search (semantic memory)
-- **Status:** Live supervised brain runtime with TODY worker, Hugging Face LLM,
-  behavior learning, guardian dialogue memory, and Phase 2A mother-care/Gita
-  growth layer.
+- **Status:** Live supervised brain runtime with TODY worker, NVIDIA/Hugging
+  Face LLM providers, behavior learning, guardian dialogue memory,
+  mother-care/Gita growth, and curriculum mastery.
 
 Project status and resume notes live in [`CHANGELOG.md`](CHANGELOG.md). Update
 that file after each phase so the next session can continue safely.
@@ -66,6 +66,35 @@ A TODY production login bug outranks writing a LinkedIn hashtag — by design.
 
 ---
 
+## TODY realtime guardian chat
+
+The live TODY worker has two polling speeds:
+
+- broad inbox scan: `TODY_WORKER_INTERVAL=90` so the account does not hammer
+  TODY APIs or trigger auth rate limits
+- guardian fast lane: `TODY_FAST_REPLY_CONVERSATION_ID=<conversation id>` with
+  `TODY_FAST_REPLY_INTERVAL=5`, so Rohit's active chat can be checked every few
+  seconds without scanning every conversation
+
+TODY's native typing endpoint is wired through
+`POST /api/v1/chat/typing.php`. The brain sends `is_typing=true` while it is
+drafting, refreshes the indicator with `TODY_NATIVE_TYPING_KEEPALIVE_SECONDS`,
+and sends `is_typing=false` when the draft finishes. Long replies are also
+split into short chat bubbles with configurable pauses:
+`TODY_CHAT_CHUNK_TARGET`, `TODY_TYPING_DELAY_MIN`, `TODY_TYPING_DELAY_MAX`, and
+`TODY_TYPING_CHARS_PER_SECOND`.
+
+Online/last-seen status comes from TODY's realtime poll endpoint, not from
+`messages.php`. The worker sends a lightweight presence heartbeat through
+`GET /api/v1/chat/poll.php?after_id=2147483647`, which refreshes `last_seen_at`
+without pulling message history. Configure with:
+
+```text
+TODY_PRESENCE_HEARTBEAT_ENABLED=true
+```
+
+---
+
 ## Safety & approval tiers (`app/safety/`)
 
 | Tier | Examples | Behavior |
@@ -107,6 +136,48 @@ Key endpoints:
 | `POST /reflection/growth-report` | create daily growth report |
 | `POST /tody/growth-report/send` | send growth report to Rohit on TODY |
 | `POST /tody/curiosity/send` | send a proactive curiosity/check-in message |
+
+---
+
+## Curriculum mastery
+
+Phase 2C adds `app/brain/curriculum_learning.py`, a CBSE/NCERT-style mastery
+loop for Mathematics, Science/Physics foundations, and later JEE/NEET/UPSC
+tracks. It studies one class bundle per day, stores knowledge as offline
+semantic memory, runs a local exam, and promotes only after the 99% pass gate.
+
+This is a learning system, not a fake guarantee. Mastery must be earned through
+stored knowledge, tests, revision, and source-backed expansion.
+
+Key endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /learn/curriculum/plan` | show 12-day class bundle plan |
+| `GET /learn/curriculum/status` | show current class and progress |
+| `POST /learn/curriculum/study-today` | study current bundle and take exam |
+| `POST /learn/curriculum/exam` | run local exam for a level |
+| `POST /learn/curriculum/answer` | answer from curriculum memory without LLM |
+| `GET /learn/curriculum/report` | create a curriculum progress report |
+
+---
+
+## Offline local brain
+
+Phase 2E adds `app/brain/offline_brain.py`, a deterministic no-LLM brain layer.
+If NVIDIA/Hugging Face/another LLM is down, the system can still talk to Rohit
+from local identity, clock, dialogue memory, learned teacher answers,
+curriculum memory, interest scores, safety rules, and capability truth.
+
+This is not full AGI and not biological consciousness. It is the local
+persistent brain/body that prevents the system from becoming silent or leaking
+provider errors when the external LLM is unavailable.
+
+Key switch:
+
+```text
+OFFLINE_BRAIN_ENABLED=true
+```
 
 ---
 
@@ -179,8 +250,12 @@ Schema changes should use Alembic migrations in `app/db/migrations/`.
 | **1L** | Live TODY activation checklist: preflight + manual one-message processing |
 | **1M** | Live supervised TODY runtime: systemd app + worker |
 | **1N** | Hugging Face LLM provider: lower-cost/free-tier-friendly LLM route |
+| **1Z** | NVIDIA Nemotron provider: high-capacity OpenAI-compatible reasoning model |
+| **1S.1** | Near-realtime TODY guardian chat: fast known-conversation polling + faster bubbles |
 | **2A** | Mother-care/Gita growth: care profile, homework, daily skill, TODY report |
 | **2B** | Child-like curiosity: proactive questions and world exploration check-ins |
+| **2C** | CBSE/NCERT curriculum mastery: 12-day plan, exam gate, offline answers |
+| **2E** | Offline local brain: no-LLM self/identity/social/memory replies |
 | **2** | Internet observation: safe research agent + source trust + fact memory |
 | **3** | World model: people, clients, schools, systems, risks, dependencies |
 

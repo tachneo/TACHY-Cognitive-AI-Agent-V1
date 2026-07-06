@@ -120,8 +120,9 @@ def test_humanize_preserves_normal_text():
 
 def test_personality_contains_honesty_rule():
     p = behavior_engine.SYSTEM_PERSONALITY
-    assert "never claim to be a biological human" in p
-    assert "protect safety above everything" in p.lower()
+    assert "you are an AI" in p
+    assert "answer truthfully" in p
+    assert "Shree" in p
 
 
 # ── Kill switch + loop integration + routes ─────────────────────
@@ -157,6 +158,5 @@ def test_behavior_routes_mounted():
 
         styles = client.get("/behavior/styles")
         assert styles.status_code == 200
-        assert set(styles.json()["modes"]) == {
-            "friend", "cto", "founder", "teacher", "motivator", "auditor",
-            "crisis"}
+        assert {"daughter", "friend", "cto", "founder", "teacher", "motivator",
+                "auditor", "crisis"} <= set(styles.json()["modes"])

@@ -146,8 +146,8 @@ def test_long_reply_chunks_into_bubbles():
 
 
 def test_typing_delay_bounds():
-    assert 1.5 <= tody_agent._typing_delay_seconds("short") <= 6.0
-    assert tody_agent._typing_delay_seconds("x" * 2000) == 6.0
+    assert 0.7 <= tody_agent._typing_delay_seconds("short") <= 3.0
+    assert tody_agent._typing_delay_seconds("x" * 2000) == 3.0
 
 
 def test_guardian_multichunk_send(monkeypatch):
@@ -170,6 +170,71 @@ def test_guardian_multichunk_send(monkeypatch):
     assert out["sent"] is True
     assert out["send_result"]["chunks"] == len(sent_bodies) >= 2
     assert "".join(sent_bodies).count("Chunk paragraph") == 4
+
+
+def test_tody_client_can_send_native_typing(monkeypatch):
+    from app.integrations.tody_client import get_client
+
+    calls = []
+
+    def fake_post(self, path, json, auth=True):
+        calls.append((path, json, auth))
+        return {}
+
+    monkeypatch.setattr(get_client().__class__, "_post", fake_post)
+
+    get_client().set_typing(135, True, "draft preview")
+    get_client().set_typing(135, False)
+
+    assert calls[0] == (
+        "/v1/chat/typing.php",
+        {"conversation_id": 135, "is_typing": True, "preview_text": "draft preview"},
+        True,
+    )
+    assert calls[1] == (
+        "/v1/chat/typing.php",
+        {"conversation_id": 135, "is_typing": False},
+        True,
+    )
+
+
+def test_guardian_direct_reply_sends_native_typing_status(monkeypatch):
+    from app.config import get_settings
+
+    monkeypatch.setenv("TODY_NATIVE_TYPING_ENABLED", "true")
+    monkeypatch.setenv("TODY_NATIVE_TYPING_KEEPALIVE_SECONDS", "2")
+    get_settings.cache_clear()
+
+    monkeypatch.setattr(tody_agent, "process",
+                        lambda *a, **k: {"reply": "Short live reply."})
+    typing_calls = []
+    sent_bodies = []
+
+    def fake_set_typing(_self, conversation_id, is_typing, preview_text=None):
+        typing_calls.append((conversation_id, is_typing, preview_text))
+        return {}
+
+    def fake_send_message(_self, conversation_id, body):
+        sent_bodies.append(body)
+        return {"id": f"native-{len(sent_bodies)}"}
+
+    monkeypatch.setattr(tody_agent.get_client().__class__, "set_typing",
+                        fake_set_typing)
+    monkeypatch.setattr(tody_agent.get_client().__class__, "send_message",
+                        fake_send_message)
+
+    out = tody_agent.direct_reply_to_guardian(
+        135,
+        "Show typing while answering.",
+        sender={"username": "rohitsingh"},
+        message_id="typing-native-1",
+    )
+
+    assert out["sent"] is True
+    assert typing_calls[0] == (135, True, None)
+    assert typing_calls[-1] == (135, False, None)
+    assert sent_bodies == ["Short live reply."]
+    get_settings.cache_clear()
 
 
 def test_presence_honesty_in_context(monkeypatch):

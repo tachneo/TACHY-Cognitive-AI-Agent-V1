@@ -14,7 +14,8 @@ import re
 from dataclasses import asdict
 
 from app.brain import (behavior_engine, emotion_engine, identity_core,
-                       interest_system, need_system, self_review,
+                       curriculum_learning,
+                       interest_system, need_system, offline_brain, self_review,
                        teacher_learning)
 from app.brain.attention_system import Signals, attention_band, priority_score
 from app.brain.decision_engine import as_dict as decision_dict
@@ -268,14 +269,17 @@ def _draft_reply(message: str, band: str, decision: dict,
     capability_block = (
         "YOUR REAL ABILITIES right now (be strictly honest about these):\n"
         "- You CAN: talk in THIS chat, remember, reason, look things up on the "
-        "web when a lookup is provided, and run approved internal actions.\n"
-        "- You CANNOT: send or forward messages to any OTHER TODY user or "
-        "contact, add people, make calls, or act in other chats — you have no "
-        "such tool. You are NOT connected to @TACHY or anyone else.\n"
-        "NEVER say 'I'll send it', 'message sent', 'I'll resend', 'I've "
-        "notified them', or that you contacted anyone — that is a lie. If asked "
-        "to message someone else, say plainly you can't do that yet, and offer "
-        "to WRITE the message text so he can send it himself.\n\n"
+        "web when a lookup is provided, run approved internal actions, and — "
+        "when Papa gives a clear command — message another TODY user through a "
+        "safe approval step.\n"
+        "- To message someone else, Papa must say it as a command like "
+        "'send message to @username: <text>' (or 'tell @username that …'); that "
+        "runs a real, approval-gated send. In FREE-FORM chat you have NOT sent "
+        "anything yourself.\n"
+        "NEVER say 'I'll send it', 'message sent', 'I've notified them', or that "
+        "you already contacted anyone from a normal chat reply — that would be a "
+        "lie. If he wants to message someone, tell him to say "
+        "'send message to @username: <text>' and you'll do it after his ok.\n\n"
     )
     context_block = f"Conversation/context:\n{context}\n\n" if context else ""
     emotion_block = ""
@@ -382,6 +386,14 @@ def _offline_reply(message: str, decision: dict, behavior: dict | None,
     # Answerable truthfully offline from the real clock.
     if intent == "datetime":
         return _finish(f"It's {_now_line()} right now.")
+
+    curriculum = curriculum_learning.answer_offline(message)
+    if curriculum.get("known"):
+        return _finish(curriculum["answer"])
+
+    local = offline_brain.answer(message, decision=decision)
+    if local.get("answered"):
+        return _finish(local["answer"])
 
     # Reuse a good answer the LLM taught me to a similar question earlier.
     learned = teacher_learning.recall_reply(message, min_score=0.5)

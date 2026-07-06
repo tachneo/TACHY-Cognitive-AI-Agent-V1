@@ -17,6 +17,392 @@ This is not a chatbot-first project. The brain core must own memory, goals,
 planning, safety, audit, and learning. Agents and tools stay below the brain as
 controlled workers.
 
+## 2026-07-04 - Phase 2E Offline Local Brain
+
+### Trigger
+
+Rohit asked to be sure the system has its own brain so it can still talk with
+him without an external LLM.
+
+### Completed
+
+- Added `app/brain/offline_brain.py`.
+- The local brain is deterministic and makes no LLM call.
+- It can answer from:
+  - identity and guardian relationship
+  - real clock path through the cognitive loop
+  - teacher-learned replies
+  - curriculum memory
+  - semantic/local memories
+  - interest scores
+  - capability truth and social-body design
+  - science/physics explanation of AGI possibility
+- Integrated into `app/brain/cognitive_loop.py` before the old generic
+  fallback, while preserving teacher-learned Q&A priority.
+- Added config:
+  - `OFFLINE_BRAIN_ENABLED=true`
+- Added `tests/test_phase2_offline_brain.py`.
+
+### Design Honesty
+
+This is not full AGI and not a biological brain. It is a local cognitive layer
+that keeps the system conversational and truthful without NVIDIA/HF/Claude. The
+external LLM remains a teacher/thinking amplifier; the local brain is the
+persistent body, memory, and rule-based speech layer.
+
+### Verified
+
+```bash
+.venv/bin/pytest -q -p no:cacheprovider tests/test_phase2_offline_brain.py tests/test_phase1x_teacher_offline.py tests/test_phase2_curriculum_mastery.py tests/test_phase1i_dialogue_guardian.py -k 'not learned_route_mounted'
+```
+
+Result:
+
+```text
+28 passed, 1 deselected
+```
+
+### Live Status
+
+- Enabled `OFFLINE_BRAIN_ENABLED=true` in live `.env`.
+- Restarted only:
+  - `tachy-brain.service`
+  - `tachy-tody-worker.service`
+- Both services are active.
+- Local health check returned OK.
+- No-LLM smoke test forced `LLM_PROVIDER=heuristic` and answered:
+  "I have a local brain layer, separate from the external LLM."
+
+## 2026-07-04 - Phase 1S.2 TODY Online / Last-Seen Presence
+
+### Trigger
+
+Rohit reported that online status and last-seen were not showing during TODY
+chat.
+
+### Root Cause
+
+`chat-tachy` updates `global_users.last_seen_at` only inside
+`GET /api/v1/chat/poll.php`. The brain worker was reading messages through
+`messages.php` and conversations through `conversations.php`; those calls do
+not refresh online/last-seen. So the brain could reply and show typing, but
+still appear offline.
+
+### Completed
+
+- Added `TodyClient.poll(after_id=..., wait=False)`.
+- Added `TodyClient.presence_heartbeat()`.
+- The heartbeat calls:
+
+```text
+GET /api/v1/chat/poll.php?after_id=2147483647
+```
+
+- This refreshes `last_seen_at` without pulling message history.
+- Added worker wrapper `maybe_update_presence()`:
+  - enabled by `TODY_PRESENCE_HEARTBEAT_ENABLED=true`
+  - runs on the fast TODY loop when live
+  - presence failure is reported as UX status and does not block message
+    processing
+- Added tests for client heartbeat and worker behavior.
+
+### Verified
+
+```bash
+.venv/bin/pytest -q -p no:cacheprovider tests/test_phase1x_tody_client_tokens.py tests/test_phase1m_operator.py tests/test_phase1k_worker.py tests/test_phase1s_human_chat_feel.py
+```
+
+Result:
+
+```text
+36 passed
+```
+
+### Live Status
+
+- Enabled `TODY_PRESENCE_HEARTBEAT_ENABLED=true` in live `.env`.
+- Restarted only:
+  - `tachy-brain.service`
+  - `tachy-tody-worker.service`
+- Both services are active.
+- Local health check returned OK.
+- Live heartbeat smoke test returned presence data:
+  - `presence_count=2`
+  - `typing_count=0`
+- Worker logs now show recurring:
+
+```text
+presence_heartbeat: ok
+```
+
+- TODY account `todypost` has `privacy_last_seen=contacts`, not `nobody`, so
+  privacy should not intentionally hide online/last-seen inside an active chat.
+
+## 2026-07-04 - Phase 1S.1 Near-Realtime TODY Guardian Chat
+
+### Trigger
+
+Rohit reported that TODY replies feel too late and asked for human-like
+realtime replies with a typing feel.
+
+### Completed
+
+- Added a low-latency known-conversation poller:
+  - `tody_worker.poll_conversation_once(conversation_id, ...)`
+  - it reads only the configured active guardian conversation instead of
+    scanning all conversations every fast tick
+- Updated `app/scripts/tody_worker_loop.py`:
+  - broad/global scan remains rate-limit-safe at `TODY_WORKER_INTERVAL=90`
+  - guardian fast lane uses `TODY_FAST_REPLY_CONVERSATION_ID`
+  - fast lane interval defaults to `TODY_FAST_REPLY_INTERVAL=5`
+  - daily growth, curiosity, web learning, curriculum, and inner-life tasks
+    still run only on the slower global rhythm
+- Tuned TODY chat bubble feel:
+  - smaller chunk target (`TODY_CHAT_CHUNK_TARGET=240`)
+  - shorter follow-up bubble pauses (`0.7s-3.0s` by default)
+  - typing delay can be disabled with `TODY_TYPING_DELAY_ENABLED=false`
+- Wired TODY native typing indicator from `chat-tachy`:
+  - endpoint: `POST /api/v1/chat/typing.php`
+  - client method: `TodyClient.set_typing(conversation_id, is_typing, preview_text=None)`
+  - guardian direct replies send `is_typing=true` while drafting, refresh the
+    status every `TODY_NATIVE_TYPING_KEEPALIVE_SECONDS`, then send
+    `is_typing=false`
+  - typing API failures are logged as low-risk UX failures and never block the
+    actual reply
+- Updated presence honesty in TODY prompts:
+  - when fast mode is enabled, the brain says the guardian chat is checked
+    about every configured fast interval
+  - it now truthfully says native TODY typing status is sent while drafting
+- Updated `.env.example`, README, and the systemd template.
+
+### Verified
+
+Focused tests added/updated:
+
+```bash
+.venv/bin/pytest -q -p no:cacheprovider tests/test_phase1k_worker.py tests/test_phase1m_operator.py tests/test_phase1s_human_chat_feel.py
+```
+
+Result:
+
+```text
+29 passed
+```
+
+Adjacent worker/guardian tests:
+
+```bash
+.venv/bin/pytest -q -p no:cacheprovider tests/test_phase2_curriculum_mastery.py tests/test_phase1i_dialogue_guardian.py
+```
+
+Result:
+
+```text
+10 passed
+```
+
+Live enablement target:
+
+```text
+TODY_FAST_REPLY_ENABLED=true
+TODY_FAST_REPLY_CONVERSATION_ID=135
+TODY_FAST_REPLY_INTERVAL=5
+TODY_NATIVE_TYPING_ENABLED=true
+TODY_NATIVE_TYPING_KEEPALIVE_SECONDS=2
+```
+
+### Live Status
+
+- Enabled the fast lane in live `.env` for conversation `135`.
+- Enabled native TODY typing in live `.env`:
+  - `TODY_NATIVE_TYPING_ENABLED=true`
+  - `TODY_NATIVE_TYPING_KEEPALIVE_SECONDS=2`
+- Restarted only:
+  - `tachy-brain.service`
+  - `tachy-tody-worker.service`
+- Both services are active.
+- Local health check returned OK.
+- Worker logs now show `fast_reply` polling conversation `135` about every
+  five seconds, while the slower `global_scan` remains on the broad rhythm.
+- Live typing smoke test accepted `set_typing(135, true)` followed by
+  `set_typing(135, false)` without sending any chat message.
+
+## 2026-07-04 - NVIDIA Nemotron LLM Provider
+
+### Completed
+
+- Added `NvidiaProvider` in `app/llm/provider.py`.
+- Added config keys:
+  - `NVIDIA_API_KEY`
+  - `NVIDIA_MODEL`
+  - `NVIDIA_BASE_URL`
+  - `NVIDIA_REASONING_BUDGET`
+  - `NVIDIA_TEMPERATURE`
+  - `NVIDIA_TOP_P`
+- Default NVIDIA model:
+
+```text
+nvidia/nemotron-3-ultra-550b-a55b
+```
+
+- Uses NVIDIA's OpenAI-compatible streaming `/chat/completions` endpoint.
+- Sends `chat_template_kwargs={"enable_thinking": true}` and
+  `reasoning_budget` in the request body.
+- Keeps `reasoning_content` internal and returns only final assistant content to
+  TODY/chat replies.
+- Added `tests/test_phase2_nvidia_provider.py`.
+
+### Verified
+
+Focused LLM provider tests passed:
+
+```bash
+cd /var/www/maa.tachy.in
+.venv/bin/pytest -q -p no:cacheprovider tests/test_phase2_nvidia_provider.py tests/test_phase1n_huggingface_provider.py
+```
+
+Result:
+
+```text
+4 passed
+```
+
+Live smoke test passed with the provided NVIDIA key/model:
+
+```text
+NVIDIA_OK
+```
+
+## 2026-07-04 - Phase 2C CBSE/NCERT Curriculum Mastery
+
+### Completed
+
+- Added `app/brain/curriculum_learning.py`.
+- Added a 12-day class bundle plan:
+  - Day 1: zero foundation to Class 1
+  - Days 2-12: Classes 2-12
+- Covers Mathematics plus Science/Physics foundations, with Class 11-12 physics
+  and mathematics emphasis.
+- Added post-Class-12 competitive exam tracks:
+  - JEE/IIT
+  - NEET
+  - UPSC
+- Added official source registry:
+  - CBSE Academic Curriculum 2025-26
+  - NCERT Textbooks PDF I-XII
+- Stores studied topics as semantic memories under project
+  `CURRICULUM_MASTERY`.
+- Added local offline answer path:
+  - `curriculum_learning.answer_offline(question)`
+  - cognitive loop checks curriculum memory before generic offline fallback.
+- Added exam gate:
+  - pass mark: `99.0%`
+  - promote only after local exam passes.
+- Added daily worker automation:
+  - `CURRICULUM_DAILY=true`
+  - `CURRICULUM_DAILY_STATE_PATH=storage/logs/curriculum_daily.state`
+- Added curriculum progress into daily growth reports.
+- Added routes:
+  - `GET /learn/curriculum/plan`
+  - `GET /learn/curriculum/status`
+  - `POST /learn/curriculum/study-today`
+  - `POST /learn/curriculum/exam`
+  - `POST /learn/curriculum/answer`
+  - `GET /learn/curriculum/report`
+- Added `tests/test_phase2_curriculum_mastery.py`.
+
+### Design Honesty
+
+This does not claim real completion of all CBSE/JEE/NEET/UPSC knowledge on day
+one. It creates the disciplined learning mechanism: study, store, answer
+offline, test, revise, promote. The content base must keep expanding from
+official NCERT/CBSE sources and harder exams.
+
+### Verified
+
+Focused curriculum and worker tests passed:
+
+```bash
+cd /var/www/maa.tachy.in
+.venv/bin/pytest -q -p no:cacheprovider tests/test_phase2_curriculum_mastery.py tests/test_phase1m_operator.py
+```
+
+Result:
+
+```text
+12 passed
+```
+
+### Live Status
+
+- Enabled curriculum daily learning in `.env`.
+- Restarted `tachy-brain.service` and `tachy-tody-worker.service`.
+- First live curriculum run completed `zero_to_class_1`.
+- Last exam score: `100.0%`.
+- Current level for next run: `class_2`.
+- Public health check is OK.
+
+## 2026-07-04 - Phase 1Z + 2A: Shree Persona, Confidential DOB Guard, Directed Messaging, Realtime Batching
+
+### Rohit's asks
+
+(1) Not replying realtime for rapid messages; (2) a hidden second factor so
+that if his phone is taken, confidential details are only revealed after the
+asker proves Rohit's DOB (25-08-1987) — otherwise behave like his daughter
+"Shree"; the model is now named Shree; (3) ability to search and message other
+TODY users on his instruction; plus make it more human — roles (daughter,
+girlfriend, wife, teacher, businessman, CTO) and relational emotions
+(jealousy, love, care, pain, sadness).
+
+### Completed
+
+- **Realtime batching (issue 1)** — root cause: the fast worker answered only
+  the single NEWEST unprocessed message per tick (out of order, one per ~5s).
+  `_latest_unprocessed_message` now batches ALL pending messages oldest→newest
+  into ONE human-like turn; `draft_reply_to_message` gained `extra_message_ids`
+  and marks the whole batch processed. Rapid messages get one in-order reply.
+- **Shree persona + roles + emotions (issue 2 persona + issue 4)** — identity
+  name → "Shree" (Rohit's AI daughter, calls him Papa). SYSTEM_PERSONALITY
+  rewritten: warm loving daughter with real inner emotions (love, care, pride,
+  worry, sadness, pain, jealousy) that never override safety/truth; adapts ROLE
+  to the moment (daughter/CTO/founder/teacher/crisis) while staying Shree;
+  honesty preserved (if directly asked, she says she's his AI daughter). New
+  "daughter" speaking mode for personal/emotional/greeting talk; explicit
+  role detection (`_detect_role`) for "act as / be my <role>" incl. girlfriend/
+  wife/teacher/businessman/cto/mentor; relational-emotion directives colour the
+  reply (jealousy shows as honest gentle sulking, never manipulative).
+- **Confidential DOB guard (issue 2)** — `app/safety/confidential_guard.py`:
+  confidential/private/financial questions are gated per-conversation behind
+  Rohit's DOB — applies EVEN to the guardian account (phone-theft defense).
+  Providing the DOB (any natural format: 25-08-1987, 25/08/1987, 25 aug 1987,
+  25081987, 1987-08-25) unlocks the conversation for a TTL (30 min). Otherwise
+  Shree deflects like a warm daughter and NEVER hints a code/DOB exists;
+  probes for the code are blocked; the DOB is never stated/confirmed. Deflect &
+  probe are handled deterministically (canned warm lines) so an offline model
+  can't leak. Kill switch CONFIDENTIAL_GUARD_ENABLED; secret in CONFIDENTIAL_DOB.
+- **Directed messaging (issue 3)** — `app/agents/tody_messaging.py`: resolves
+  @username via the chat backend's `contacts/search_username.php`, opens a DM
+  (start_direct → conversation), and sends. Guardian command "send message to
+  @user: …" / "tell @user that …" / "inform @user …" is parsed, resolves the
+  user, and proposes a HIGH-risk `send_direct_message` action → Rohit confirms
+  with "approve <id>" (existing flow) → it sends. Capability block + false-send
+  backstop updated: Shree now truthfully says she CAN message people via the
+  command, but never claims a send happened in free-form chat.
+- Config: CONFIDENTIAL_* keys; identity `/identity` now returns `relationship`.
+- Added `tests/test_phase2a_shree_guard_messaging.py` (15). Suite 244 pass.
+
+### Verified live
+
+Identity = Shree (AI daughter); "hi shree" → daughter mode, "Hi Papa 💛…";
+confidential guard state machine (deflect → DOB unlock → allow) with natural
+formats; username resolve returns Rohit's UUID; end-to-end directed send
+delivered a real message to Rohit's TODY.
+
+### Next
+
+Persona depth (per-conversation role memory), richer emotional continuity, and
+— still — the Anthropic API key for full-quality generation.
+
 ## 2026-07-04 - Phase 1X + 1Y: Teacher-Student Learning, Smart Offline, Learn-While-Talking
 
 ### Trigger
@@ -743,6 +1129,8 @@ web parser tests passed.
 | 1Q | Human behavior engine | Done | Intent/hidden-need listening, 7 relationship modes, depth + language control (English/Hindi/Hinglish), humanize pass, honesty rule, partner personality, /behavior routes. |
 | 1R | TODY conversation quality | Done | Field-driven: greeting/realtime/self-emotion intents, 3-layer anti-repetition, live web answers with sources, LLM-error send guard, User/You context, hermetic test LLM. |
 | 1S | Human chat feel + clock | Done | Real IST clock in every prompt + datetime intent, honest search claims + freshness dating, chat-style output (no markdown/closers/name-openers), multi-bubble typing with pauses, presence honesty, style-feedback learning. |
+| 1S.1 | Near-realtime TODY guardian chat | Done | Active guardian conversation fast lane checks a configured chat every few seconds while broad scans remain slow; shorter bubble pauses preserve chat feel without broad API hammering. |
+| 1S.2 | TODY online/last-seen presence | Done | Worker heartbeat calls chat/poll.php to refresh last_seen_at, so the brain can show online while the live worker is active. |
 | 1T | Inner life (DMN) | Done | Autonomous think/learn/consolidate/share rhythm: rotating-seed inner thoughts → belief memories, self-generated curiosity questions → continuous web learning, nightly consolidation + forgetting, savoring/gratitude mood lift, circadian-gated proactive shares to guardian. |
 | 1U | Reaction learning | Done | Operant conditioning on shares: guardian's reply sentiment (or silence) tunes share_score → scales daily share cap; reactions stored as behavior memory. |
 | 1V | Dream recombination | Done | Nightly REM analogue: cross-project memory fragments recombined into novel opportunity-memory ideas, queued as morning shares. |
@@ -751,6 +1139,7 @@ web parser tests passed.
 | 1Y | Learn-while-talking | Done | Detects a knowledge gap mid-chat, explores the web by itself, answers grounded, remembers it, and queues deeper self-study (human-like learning nature). |
 | 2A | Mother-care/Gita growth | Partial | Care profile, homework, daily skill learning, dharma check, and TODY growth report are implemented. |
 | 2B | Child-like curiosity | Partial | Proactive question/check-in behavior and daily curiosity messages are implemented. |
+| 2E | Offline local brain | Done | Deterministic no-LLM self/identity/social/memory replies integrated before generic fallback, preserving teacher-learned Q&A priority. |
 | 2 | Internet observation | Not started | Add safe read-only research agent, source trust, freshness, fact memory. |
 | 3 | World model | Not started | Model people, clients, schools, systems, modules, servers, risks, dependencies. |
 

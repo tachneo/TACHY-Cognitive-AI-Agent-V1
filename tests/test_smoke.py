@@ -15,7 +15,7 @@ def test_priority_formula():
 def test_loop_runs():
     out = process("Client is asking many changes again, what should I do?",
                   Signals(client_impact=8, emotional_weight=7, urgency=5))
-    assert out["identity"] == "TACHY Cognitive AI"
+    assert out["identity"] == "Shree"
     assert out["guardian"] == "Rohit Kumar"
     assert out["attention_band"] in {"low", "normal", "high", "critical"}
 

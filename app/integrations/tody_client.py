@@ -140,6 +140,21 @@ class TodyClient:
     def contacts(self) -> dict:
         return self._get("/v1/contacts/list.php")
 
+    def poll(self, after_id: int = 0, *, wait: bool = False) -> dict:
+        params = {"after_id": int(after_id)}
+        if wait:
+            params["wait"] = "1"
+        return self._get("/v1/chat/poll.php", params)
+
+    def presence_heartbeat(self) -> dict:
+        """Refresh TODY last_seen/online state without fetching chat history.
+
+        chat-tachy's poll endpoint debounces `last_seen_at` updates and is the
+        source of online/last-seen status. A very high `after_id` avoids the
+        expensive initial message load while still touching presence.
+        """
+        return self.poll(after_id=2_147_483_647)
+
     # ── write (gated by the agent/approval layer) ───────────────
     def start_direct(self, user_uuid: str) -> dict:
         return self._post("/v1/chat/start_direct.php", {"user_uuid": user_uuid})
@@ -151,6 +166,16 @@ class TodyClient:
             "client_nonce": uuid.uuid4().hex,
             "message_type": "text",
         })
+
+    def set_typing(self, conversation_id: int, is_typing: bool,
+                   preview_text: str | None = None) -> dict:
+        payload = {
+            "conversation_id": conversation_id,
+            "is_typing": bool(is_typing),
+        }
+        if preview_text:
+            payload["preview_text"] = preview_text[:500]
+        return self._post("/v1/chat/typing.php", payload)
 
     def create_post(self, body: str) -> dict:
         return self._post("/v1/posts/create.php", {"body": body})

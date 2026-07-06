@@ -7,6 +7,7 @@ LLM_PROVIDER=anthropic (+ LLM_API_KEY) in .env to use a real model.
 from __future__ import annotations
 
 import re
+import json
 from typing import Protocol
 
 import httpx
@@ -114,6 +115,66 @@ class HuggingFaceProvider:
         return str(content)
 
 
+class NvidiaProvider:
+    """Calls NVIDIA NIM's OpenAI-compatible chat completions endpoint."""
+
+    name = "nvidia"
+
+    def __init__(self, api_key: str, model: str, base_url: str,
+                 reasoning_budget: int = 16384, temperature: float = 1.0,
+                 top_p: float = 0.95):
+        self._key = api_key
+        self._model = model
+        self._url = base_url.rstrip("/") + "/chat/completions"
+        self._reasoning_budget = reasoning_budget
+        self._temperature = temperature
+        self._top_p = top_p
+
+    def complete(self, system: str, prompt: str, max_tokens: int = 800) -> str:
+        payload = {
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": self._temperature,
+            "top_p": self._top_p,
+            "max_tokens": max(max_tokens, self._reasoning_budget),
+            "chat_template_kwargs": {"enable_thinking": True},
+            "reasoning_budget": self._reasoning_budget,
+            "stream": True,
+        }
+        headers = {
+            "Authorization": f"Bearer {self._key}",
+            "content-type": "application/json",
+        }
+        final: list[str] = []
+        with httpx.stream(
+            "POST",
+            self._url,
+            headers=headers,
+            json=payload,
+            timeout=180,
+        ) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                raw = line.removeprefix("data:").strip()
+                if raw == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(raw)
+                except ValueError:
+                    continue
+                for choice in chunk.get("choices") or []:
+                    delta = choice.get("delta") or {}
+                    content = _message_content(delta.get("content", ""))
+                    if content:
+                        final.append(content)
+        return "".join(final).strip()
+
+
 def get_provider() -> Provider:
     s = get_settings()
     key = (s.llm_api_key or "").strip()
@@ -122,8 +183,28 @@ def get_provider() -> Provider:
     hf_key = (s.hf_token or "").strip()
     if s.llm_provider == "huggingface" and hf_key:
         return HuggingFaceProvider(hf_key, s.hf_model, s.hf_base_url)
+    nvidia_key = (s.nvidia_api_key or "").strip()
+    if s.llm_provider == "nvidia" and nvidia_key:
+        return NvidiaProvider(
+            nvidia_key,
+            s.nvidia_model,
+            s.nvidia_base_url,
+            reasoning_budget=s.nvidia_reasoning_budget,
+            temperature=s.nvidia_temperature,
+            top_p=s.nvidia_top_p,
+        )
     # 'glm' / 'local' providers plug in here in a later phase.
     return HeuristicProvider()
+
+
+def _message_content(content: object) -> str:
+    if isinstance(content, list):
+        return "".join(
+            str(part.get("text", ""))
+            for part in content
+            if isinstance(part, dict)
+        )
+    return str(content or "")
 
 
 def _extract_user_message(prompt: str) -> str:

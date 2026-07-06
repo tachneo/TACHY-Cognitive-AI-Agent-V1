@@ -88,3 +88,35 @@ def test_worker_skips_already_processed_candidate(monkeypatch):
     out = tody_worker.poll_once(dry_run=True)
     assert out["processed"] is False
     assert out["reason"] == "no unprocessed text messages found"
+
+
+def test_fast_conversation_poll_uses_messages_without_inbox(monkeypatch):
+    from app.agents import tody_agent, tody_worker
+
+    def _inbox(limit=10):
+        raise AssertionError("fast conversation poll must not scan inbox")
+
+    def _messages(conversation_id, limit=10):
+        assert conversation_id == 135
+        return {"messages": [{"id": "fast-1", "body": "Reply quickly."}]}
+
+    def _draft_reply_to_message(conversation_id, body, *, sender=None,
+                                message_id=None, extra_message_ids=None,
+                                auto_send_guardian=None):
+        return {
+            "processed": True,
+            "conversation_id": conversation_id,
+            "message_id": message_id,
+            "body": body,
+        }
+
+    monkeypatch.setattr(tody_agent, "inbox", _inbox)
+    monkeypatch.setattr(tody_agent, "messages", _messages)
+    monkeypatch.setattr(tody_agent, "draft_reply_to_message", _draft_reply_to_message)
+
+    out = tody_worker.poll_conversation_once(135, dry_run=False)
+
+    assert out["processed"] is True
+    assert out["fast_conversation"] is True
+    assert out["conversation_id"] == 135
+    assert out["message_id"] == "fast-1"

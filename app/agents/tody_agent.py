@@ -8,7 +8,9 @@ This is the Phase-1D guardrail before any TODY automation.
 from __future__ import annotations
 
 import json
+import os
 import re
+import threading
 import time
 
 from app.brain import behavior_engine
@@ -18,7 +20,7 @@ from app.brain.nurture_engine import childlike_curiosity_message, daily_growth_r
 from app.config import get_settings
 from app.integrations.tody_client import TodyError, get_client
 from app.memory import dialogue_memory, relationship_memory
-from app.safety import approvals
+from app.safety import approvals, confidential_guard
 from app.safety.audit_logger import log_event
 
 
@@ -90,7 +92,21 @@ def _strip_repeated_name(reply: str, recent_openings: list[str]) -> str:
     return reply
 
 
-_CHUNK_TARGET = 300
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+_CHUNK_TARGET = max(120, _int_env("TODY_CHAT_CHUNK_TARGET", 240))
 
 
 def _chat_chunks(reply: str, max_chunks: int = 3) -> list[str]:
@@ -126,7 +142,104 @@ def _chat_chunks(reply: str, max_chunks: int = 3) -> list[str]:
 
 def _typing_delay_seconds(chunk: str) -> float:
     """Rough human typing pace for the pause before a follow-up bubble."""
-    return min(6.0, max(1.5, len(chunk) / 80))
+    if os.getenv("TODY_TYPING_DELAY_ENABLED", "true").strip().lower() in {
+        "0", "false", "no", "off",
+    }:
+        return 0.0
+    min_delay = max(0.0, _float_env("TODY_TYPING_DELAY_MIN", 0.7))
+    max_delay = max(min_delay, _float_env("TODY_TYPING_DELAY_MAX", 3.0))
+    chars_per_second = max(20.0, _float_env("TODY_TYPING_CHARS_PER_SECOND", 120.0))
+    return min(max_delay, max(min_delay, len(chunk) / chars_per_second))
+
+
+class _TypingIndicator:
+    """Keep TODY's native typing indicator alive while a reply is drafted."""
+
+    def __init__(self, conversation_id: int, *, enabled: bool) -> None:
+        self.conversation_id = conversation_id
+        self.enabled = enabled
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._last_error_logged = False
+
+    def __enter__(self) -> "_TypingIndicator":
+        if not self.enabled:
+            return self
+        self._send(True)
+        self._thread = threading.Thread(
+            target=self._keepalive,
+            name=f"tody-typing-{self.conversation_id}",
+            daemon=True,
+        )
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if not self.enabled:
+            return
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=0.5)
+        self._send(False)
+
+    def _keepalive(self) -> None:
+        settings = get_settings()
+        interval = max(0.7, float(settings.tody_native_typing_keepalive_seconds))
+        while not self._stop.wait(interval):
+            self._send(True)
+
+    def _send(self, is_typing: bool) -> None:
+        settings = get_settings()
+        preview = settings.tody_native_typing_preview.strip() or None
+        try:
+            get_client().set_typing(self.conversation_id, is_typing, preview)
+        except Exception as exc:
+            # Typing is UX only. Never block or fail the actual reply path.
+            if not self._last_error_logged:
+                log_event(
+                    "tody_typing_update_failed",
+                    detail=f"conversation_id={self.conversation_id}; error={type(exc).__name__}",
+                    risk_tier="low",
+                )
+                self._last_error_logged = True
+
+
+def _typing_indicator_enabled(is_guardian: bool, auto_send_guardian: bool) -> bool:
+    settings = get_settings()
+    return (
+        is_guardian
+        and auto_send_guardian
+        and settings.tody_native_typing_enabled
+        and settings.guardian_tody_direct_reply
+    )
+
+
+def _presence_honesty_text() -> str:
+    fast_enabled = os.getenv("TODY_FAST_REPLY_ENABLED", "true").strip().lower()
+    fast_id = os.getenv("TODY_FAST_REPLY_CONVERSATION_ID", "").strip()
+    native_typing = os.getenv("TODY_NATIVE_TYPING_ENABLED", "true").strip().lower()
+    typing_text = (
+        " Native TODY typing status is sent while you draft replies."
+        if native_typing not in {"0", "false", "no", "off"} else
+        " Native TODY typing status is disabled."
+    )
+    if fast_enabled not in {"0", "false", "no", "off"} and fast_id.isdigit():
+        interval = os.getenv("TODY_FAST_REPLY_INTERVAL", "5").strip() or "5"
+        return (
+            "\nPresence honesty: this guardian chat is checked by a near-real-time "
+            f"worker about every {interval} seconds, but you still do not show as "
+            "'online' like a normal user. Long answers may arrive as short chat "
+            "bubbles with small pauses."
+            + typing_text
+        )
+    interval = os.getenv("TODY_WORKER_INTERVAL", "90").strip() or "90"
+    return (
+        "\nPresence honesty: you reply through a supervised worker that "
+        f"checks TODY about every {interval} seconds — you do not show as "
+        "'online' like a normal user. If asked why you look offline/hidden, "
+        "explain that honestly; never blame a fake 'glitch'."
+        + typing_text
+    )
 
 
 _APPROVE_CMD = re.compile(r"^\s*(approve|reject)\s+#?(\d+)\s*$", re.I)
@@ -147,6 +260,23 @@ def _guardian_command_reply(message: str) -> str | None:
                  for r in rows]
         return ("Pending approvals:\n" + "\n".join(lines)
                 + "\nReply 'approve <id>' or 'reject <id>'.")
+
+    # Directed messaging: "send message to @arjun: call me" (Phase 2A).
+    from app.agents import tody_messaging
+    cmd = tody_messaging.parse_command(message)
+    if cmd:
+        user = tody_messaging.resolve_username(cmd["username"])
+        if user is None:
+            return (f"I couldn't find a TODY user called @{cmd['username']}. "
+                    "Can you check the username?")
+        proposal = action_engine.propose(
+            "send_direct_message",
+            {"username": user["username"], "body": cmd["body"]})
+        appr_id = proposal["approval"]["id"]
+        return (f"Ready to message @{user['username']} "
+                f"({user['display_name']}):\n“{cmd['body']}”\n"
+                f"Reply 'approve {appr_id}' to send, or 'reject {appr_id}' "
+                "to cancel.")
 
     m = _APPROVE_CMD.match(message or "")
     if not m:
@@ -217,9 +347,14 @@ def draft_reply_to_message(
     *,
     sender: dict | None = None,
     message_id: int | str | None = None,
+    extra_message_ids: list | None = None,
     auto_send_guardian: bool | None = None,
 ) -> dict:
-    """Process an inbound TODY message and queue the drafted reply for approval."""
+    """Process an inbound TODY message and queue the drafted reply for approval.
+
+    `extra_message_ids` are older messages batched into this one turn; they get
+    marked processed alongside `message_id` so nothing is answered twice.
+    """
     if dialogue_memory.was_processed("tody", conversation_id, message_id):
         return {
             "processed": False,
@@ -235,35 +370,47 @@ def draft_reply_to_message(
         # Reaction learning: his first message after a proactive share scores it.
         from app.brain import inner_life
         inner_life.observe_reaction(message)
+    if auto_send_guardian is None:
+        auto_send_guardian = get_settings().tody_supervised_auto_reply
     # Guardian chat commands (pending/approve/reject) bypass the LLM entirely.
     command_reply = _guardian_command_reply(message) if is_guardian else None
     recent_openings = _recent_reply_openings(conversation_id)
-    if command_reply is not None:
-        brain = {"reply": command_reply, "guardian_command": True}
-    else:
-        context = dialogue_memory.identity_context(conversation_id, person=person)
-        if recent_openings:
-            context += (
-                "\nYour own recent reply openings — do NOT start like any of "
-                "these again, vary completely: "
-                + " | ".join(f'"{o}"' for o in recent_openings)
+    typing_enabled = _typing_indicator_enabled(is_guardian, bool(auto_send_guardian))
+    # Confidential second-factor: private data needs the DOB unlock, even from
+    # the guardian account (phone-theft defense). Deflect/probe are handled
+    # deterministically (never trust the LLM to keep a secret when offline).
+    guard = confidential_guard.evaluate(conversation_id, message)
+    with _TypingIndicator(conversation_id, enabled=typing_enabled):
+        if command_reply is not None:
+            brain = {"reply": command_reply, "guardian_command": True}
+        elif guard["action"] == "deflect":
+            brain = {"reply": confidential_guard.deflection_reply(conversation_id),
+                     "confidential_guard": "deflect"}
+        elif guard["action"] == "probe_block":
+            brain = {"reply": confidential_guard.probe_reply(conversation_id),
+                     "confidential_guard": "probe_block"}
+        else:
+            context = dialogue_memory.identity_context(conversation_id, person=person)
+            if recent_openings:
+                context += (
+                    "\nYour own recent reply openings — do NOT start like any of "
+                    "these again, vary completely: "
+                    + " | ".join(f'"{o}"' for o in recent_openings)
+                )
+            context += _presence_honesty_text()
+            guard_directive = confidential_guard.directive(guard["action"])
+            if guard_directive:
+                context += "\n" + guard_directive
+            brain = process(
+                message,
+                Signals(
+                    client_impact=3,
+                    guardian_interest=10 if is_guardian else 6,
+                    emotional_weight=5 if is_guardian else 3,
+                ),
+                context=context,
+                channel="chat",
             )
-        context += (
-            "\nPresence honesty: you reply through a supervised worker that "
-            "checks TODY every ~20 seconds — you do not show as 'online' like "
-            "a normal user. If asked why you look offline/hidden, explain that "
-            "honestly; never blame a fake 'glitch'."
-        )
-        brain = process(
-            message,
-            Signals(
-                client_impact=3,
-                guardian_interest=10 if is_guardian else 6,
-                emotional_weight=5 if is_guardian else 3,
-            ),
-            context=context,
-            channel="chat",
-        )
     reply = brain["reply"]
     if reply.lstrip().startswith("[reply fallback"):
         # LLM/provider error: never send internal error traces to TODY.
@@ -288,10 +435,10 @@ def draft_reply_to_message(
     if (intent == "third_party_action" or behavior_engine.claims_false_send(reply)):
         if behavior_engine.claims_false_send(reply):
             reply = (
-                "I have to be honest with you — I can't send messages to "
-                "other users like @TACHY yet. I can only talk with you here in "
-                "this chat. What I can do: I'll write the exact message for you, "
-                "and you send it from your account. Want me to draft it?"
+                "I can actually message people for you now, Papa — but nothing "
+                "has gone out yet. Just tell me like "
+                "'send message to @username: your text', and after you approve "
+                "it, it's on its way. Want to do that?"
             )
             log_event("false_action_suppressed",
                       detail=f"conversation_id={conversation_id}", risk_tier="low")
@@ -314,6 +461,8 @@ def draft_reply_to_message(
     )
     queued = request_send(conversation_id, reply)
     dialogue_memory.mark_processed("tody", conversation_id, message_id)
+    for extra_id in (extra_message_ids or []):
+        dialogue_memory.mark_processed("tody", conversation_id, extra_id)
     log_event(
         "tody_reply_drafted",
         detail=(
@@ -338,8 +487,6 @@ def draft_reply_to_message(
             else "Verified guardian message processed. Draft queued; direct send is available through guardian endpoint."
         ),
     }
-    if auto_send_guardian is None:
-        auto_send_guardian = get_settings().tody_supervised_auto_reply
     if is_guardian and auto_send_guardian:
         approvals.respond(queued["approval"]["id"], approved=True)
         chunks = _chat_chunks(reply)
@@ -352,7 +499,9 @@ def draft_reply_to_message(
             chunk_results = []
             for i, chunk in enumerate(chunks):
                 if i:
-                    time.sleep(_typing_delay_seconds(chunk))
+                    delay = _typing_delay_seconds(chunk)
+                    if delay > 0:
+                        time.sleep(delay)
                 appr = request_send(conversation_id, chunk)
                 approvals.respond(appr["approval"]["id"], approved=True)
                 chunk_results.append(

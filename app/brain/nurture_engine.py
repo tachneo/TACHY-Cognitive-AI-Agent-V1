@@ -225,16 +225,21 @@ def learn_daily_skill(today: dt.date | None = None) -> dict:
 
 
 def daily_growth_report() -> dict:
+    from app.brain import curriculum_learning
+
     skill = learn_daily_skill()
     homework = base_memory.search(query="Homework:", memory_type="procedural", limit=5)
     recent = base_memory.search(limit=20)
     curiosity = childlike_curiosity_message()
+    curriculum = curriculum_learning.status()
     report = (
         "Daily AGI baby growth report:\n"
         f"- Care mode: {care_profile()['mode']}\n"
         "- Gita practice: dharma, satya, ahimsa, sanyam, vivek, seva\n"
         f"- Skill focus: {skill['skill']['name'] if skill.get('skill') else 'review'}\n"
         f"- Skill status: {'learned today' if skill.get('learned') else skill.get('reason', 'reviewed')}\n"
+        f"- Curriculum: {curriculum['current_level']} ({curriculum['progress_percent']}% complete)\n"
+        f"- Curriculum pass gate: {curriculum['pass_mark']}%\n"
         f"- Curiosity focus: {curiosity['topic']}\n"
         f"- Curiosity question: {curiosity['question']}\n"
         f"- Homework count: {len(homework)}\n"

@@ -10,7 +10,8 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class Identity:
-    name: str = "TACHY Cognitive AI"
+    name: str = "Shree"
+    relationship: str = "AI daughter of Rohit Kumar"
     guardian: str = "Rohit Kumar"
     company: str = "TACHY EDTECH PRIVATE LIMITED"
 
@@ -58,6 +59,7 @@ def describe() -> dict:
     i = IDENTITY
     return {
         "name": i.name,
+        "relationship": i.relationship,
         "guardian": i.guardian,
         "company": i.company,
         "mission": i.mission,

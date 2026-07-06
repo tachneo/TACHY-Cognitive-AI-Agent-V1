@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     hf_token: str = ""
     hf_model: str = "openai/gpt-oss-120b:fastest"
     hf_base_url: str = "https://router.huggingface.co/v1"
+    nvidia_api_key: str = ""
+    nvidia_model: str = "nvidia/nemotron-3-ultra-550b-a55b"
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+    nvidia_reasoning_budget: int = 16384
+    nvidia_temperature: float = 1.0
+    nvidia_top_p: float = 0.95
 
     # Safety
     safety_enforce: bool = True
@@ -48,6 +54,18 @@ class Settings(BaseSettings):
     tody_email: str = ""
     tody_password: str = ""
     tody_token_path: str = "storage/logs/tody_tokens.json"
+    tody_fast_reply_enabled: bool = True
+    tody_fast_reply_conversation_id: str = ""
+    tody_fast_reply_interval: int = 5
+    tody_chat_chunk_target: int = 240
+    tody_typing_delay_enabled: bool = True
+    tody_typing_delay_min: float = 0.7
+    tody_typing_delay_max: float = 3.0
+    tody_typing_chars_per_second: float = 120.0
+    tody_native_typing_enabled: bool = True
+    tody_native_typing_keepalive_seconds: float = 2.0
+    tody_native_typing_preview: str = ""
+    tody_presence_heartbeat_enabled: bool = True
 
     # Behavior engine (Phase 1Q) — human conversation layer.
     behavior_engine_enabled: bool = True
@@ -55,9 +73,22 @@ class Settings(BaseSettings):
     # Teacher-student learning (Phase 1X) — learn LLM answers for offline reuse.
     teacher_learning_enabled: bool = True
 
+    # Offline local brain — deterministic no-LLM replies from identity, memory,
+    # curriculum, interests, and capability truth.
+    offline_brain_enabled: bool = True
+
     # Conversational learning (Phase 1Y) — explore the web mid-chat on a
     # knowledge gap, learn the answer, and stay curious to study it deeper.
     conversational_learning_enabled: bool = True
+
+    # Confidential guard (Phase 1Z) — hidden DOB second factor for private data.
+    confidential_guard_enabled: bool = True
+    confidential_dob: str = "25-08-1987"
+    confidential_unlock_ttl_minutes: int = 30
+
+    # Curriculum mastery — CBSE/NCERT foundation through Class 12, then exam tracks.
+    curriculum_learning_enabled: bool = True
+    curriculum_state_path: str = "storage/logs/curriculum_mastery.json"
 
     # Inner life (Phase 1T) — autonomous thinking/learning/sharing rhythm.
     inner_life_enabled: bool = True

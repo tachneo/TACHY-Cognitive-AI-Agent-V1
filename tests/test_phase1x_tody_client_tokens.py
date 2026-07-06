@@ -44,3 +44,29 @@ def test_tody_client_persists_and_reuses_tokens(monkeypatch, tmp_path):
     second = tody_client.TodyClient()
     assert second._token() == "access-1"
     assert len(calls) == 1
+
+
+def test_tody_presence_heartbeat_uses_poll_without_message_history(monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.integrations import tody_client
+
+    monkeypatch.setenv("TODY_EMAIL", "bot@example.com")
+    monkeypatch.setenv("TODY_PASSWORD", "secret")
+    monkeypatch.setenv("TODY_TOKEN_PATH", str(tmp_path / "tokens.json"))
+    get_settings.cache_clear()
+
+    client = tody_client.TodyClient()
+    client._access = "access-1"
+    client._expires_at = 9_999_999_999
+    calls = []
+
+    def fake_get(self, path, params=None):
+        calls.append((path, params))
+        return {"presence": [], "typing": []}
+
+    monkeypatch.setattr(tody_client.TodyClient, "_get", fake_get)
+
+    out = client.presence_heartbeat()
+
+    assert out == {"presence": [], "typing": []}
+    assert calls == [("/v1/chat/poll.php", {"after_id": 2_147_483_647})]

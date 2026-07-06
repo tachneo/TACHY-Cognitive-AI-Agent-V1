@@ -68,6 +68,13 @@ def _run_send_tody_message(params: dict) -> dict:
                                    str(params["body"]))
 
 
+def _run_send_direct_message(params: dict) -> dict:
+    # Resolve @username → open DM → send (Phase 2A directed messaging).
+    from app.agents import tody_messaging
+    return tody_messaging.send_direct(str(params["username"]),
+                                      str(params["body"]))
+
+
 REGISTRY: dict[str, ActionSpec] = {
     spec.name: spec for spec in (
         ActionSpec("learn_topic", "low",
@@ -86,6 +93,9 @@ REGISTRY: dict[str, ActionSpec] = {
         ActionSpec("send_tody_message", "high",
                    "Send a TODY message (double-gated: queues a payload-bound "
                    "send approval)", _run_send_tody_message),
+        ActionSpec("send_direct_message", "high",
+                   "Message another TODY user by @username (resolve → DM → "
+                   "send; approval-gated)", _run_send_direct_message),
     )
 }
 
