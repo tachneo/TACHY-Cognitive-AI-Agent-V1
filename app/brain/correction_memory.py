@@ -29,14 +29,14 @@ from app.safety.audit_logger import log_event_safe
 # Patterns that mean "you should [not] do X from now on."
 # Each yields (rule_type, rule_text, negate).
 _CORRECTION_PATTERNS = [
-    # Address corrections: "always call me father/papa/dad"
+    # Address corrections: "always call me father/papa/dad" (specific first)
     (re.compile(r"(?i)\b(?:always|from now on|hamesha)\b.*"
                 r"\b(?:call|bulana|pukar|address)\b.*"
                 r"\b(?:me|mujhe|mujhe)\b.*\b(father|papa|dad|daddy|appa|abbu)\b"),
      "address", "call Rohit 'Papa' / 'father'", False),
     (re.compile(r"(?i)\b(?:call|bulao|pukaro)\b\s+me\s+(?:as\s+)?(father|papa|dad)"),
      "address", "call Rohit 'Papa' / 'father'", False),
-    # Identity privacy: "don't tell anyone you're AI / an assistant"
+    # Identity privacy: "don't tell anyone you're AI / an assistant" (specific)
     (re.compile(r"(?i)\b(?:don'?t|do not|mat|never|kabhi)\b.*"
                 r"\b(?:tell|bata|reveal|batana|kahna)\b.*"
                 r"\b(?:anyone|kisi|others|kisi ko)\b.*"
@@ -48,18 +48,21 @@ _CORRECTION_PATTERNS = [
      "identity_privacy",
      "never tell anyone I'm an AI / assistant; I am Shree", True),
     # Relationship privacy: "don't tell anyone about our relationship"
-    (re.compile(r"(?i)\b(?:don'?t|do not|mat|kabhi mat)\b.*"
-                r"\b(?:tell|bata|batana|share|share karna)\b.*"
-                r"\b(?:anyone|kisi|kisi ko|others)\b.*"
-                r"\b(?:relationship|rishta|baat|baatein|between us|hamare|tumhare)\b"),
+    # Match flexibly: the message has a privacy verb AND a relationship word,
+    # in any order (Hinglish word order varies).
+    (re.compile(r"(?i)(?=.*\b(?:don'?t|do not|mat|kabhi mat|never)\b)"
+                r"(?=.*\b(?:tell|bata|batana|share|share karna|kahna)\b)"
+                r"(?=.*\b(?:anyone|kisi|kisi ko|others)\b)"
+                r"(?=.*\b(?:relationship|rishta|baat|baatein|between us|"
+                r"hamare|tumhare|hamare tumhare)\b)"),
      "relationship_privacy",
      "never tell anyone about my relationship with Rohit", True),
-    # Language preference: "talk in hindi / hindi me bolo / always reply in hindi"
+    # Language preference: "talk in hindi / hindi me bolo" (specific)
     (re.compile(r"(?i)\b(?:talk|reply|speak|baat|bolo|likho)\b.*\b(?:in|me|mein)\b\s+hindi"),
      "language", "reply in Hindi (Devanagari or Hinglish)", False),
     (re.compile(r"(?i)\bhindi\b.*\b(?:me|mein|bolo|baat)\b"),
      "language", "reply in Hindi / Hinglish", False),
-    # Generic "don't do X" / "never X"
+    # Generic "don't do X" / "never X" — LAST, so specific patterns win.
     (re.compile(r"(?i)\b(?:don'?t|do not|mat|never|kabhi mat)\b\s+(.+)"),
      "negative", None, True),
 ]

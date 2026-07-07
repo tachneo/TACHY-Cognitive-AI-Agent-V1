@@ -172,3 +172,21 @@ class PostIn(BaseModel):
 def post(req: PostIn) -> dict:
     """Queue a post for approval (does not publish)."""
     return tody_agent.request_post(req.body)
+
+
+# ── Proactive initiative (Phase B + E) ───────────────────────────
+
+@router.post("/proactive/cycle")
+def proactive_cycle() -> dict:
+    """Run one proactive observe→act cycle. Drafts an approval-gated message if
+    there's something worth telling Papa (a closable curiosity question, an open
+    promise, or a recent failure). Never auto-sends."""
+    from app.agents import proactive
+    return proactive.run_cycle()
+
+
+@router.get("/proactive/queue")
+def proactive_queue() -> dict:
+    """Show the curiosity queue (unanswered questions Shree will close later)."""
+    from app.agents import proactive
+    return proactive._load_queue()

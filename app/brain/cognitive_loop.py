@@ -523,9 +523,17 @@ def _offline_reply(message: str, decision: dict, behavior: dict | None,
         return _finish(learned["reply"])
 
     if not cacheable:  # realtime lookup / third-party — be honest, don't fake it
+        # Curiosity closure (Phase E): queue the unanswered question so Shree
+        # can research it when the LLM/web is back and proactively tell Papa.
+        try:
+            from app.agents import proactive
+            proactive.queue_question(message, source="offline_chat")
+        except Exception:  # noqa: BLE001
+            pass
         return _finish(
             "My main reasoning model is offline right now, so I can't pull that "
-            "for you this moment. Try me again shortly and I'll get it.")
+            "for you this moment. I've queued it — I'll look it up and tell you "
+            "as soon as I'm back at full strength.")
 
     # Ground a fresh reply in real remembered KNOWLEDGE (skip internal log rows).
     recalled = decision.get("recalled", [])
