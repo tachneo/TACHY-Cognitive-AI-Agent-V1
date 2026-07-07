@@ -28,6 +28,7 @@ class ToolResult:
     changed_path: str | None = None
     secrets_found: int = 0        # count of secrets redacted from this output
     injection: str = "none"       # none | low | medium | high (quarantined)
+    risk_tier: str = "low"        # tier the dispatch classified this call as
 
 
 def _secure(text: str, *, source: str) -> tuple[str, int, str]:

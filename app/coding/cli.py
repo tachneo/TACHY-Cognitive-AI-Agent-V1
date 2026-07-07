@@ -81,9 +81,12 @@ def _run_task(task: str, workdir: str, autonomy: str, plan_only: bool) -> int:
         print(_dim("Okay — nothing changed. Tell me how to adjust the plan."))
         return 0
 
+    def _on_alert(msg: str) -> None:
+        print(_red(f"  ⚠ {msg}"))
+
     print(_dim("\nworking…\n"))
     run = agent.execute(task, workdir, plan=planned.plan, autonomy=autonomy,
-                        approver=_approver)
+                        approver=_approver, on_alert=_on_alert)
     for t in run.turns:
         mark = _green("✓") if t.ok else _red("✗")
         detail = t.args.get("path") or t.args.get("command") \
@@ -105,8 +108,15 @@ def _run_task(task: str, workdir: str, autonomy: str, plan_only: bool) -> int:
         print(_green("Changed: ") + ", ".join(run.changed_files))
     if run.summary:
         print(_bold("\n" + run.summary))
-    print(_dim(f"\n{run.steps} steps · ~{run.tokens_est} tokens · {run.elapsed_s}s"))
-    if run.changed_files:
+    # Risk summary — always show when something notable happened.
+    if run.alerts or run.max_tier != "low" or run.scope_drift \
+            or run.secrets_blocked or run.injections_blocked:
+        print(_yellow("\n⚠ Shree's risk report:"))
+        for line in run.risk_summary.splitlines():
+            print("  " + (_red(line) if line.startswith("  ⚠") else _dim(line)))
+    print(_dim(f"\n{run.steps} steps · ~{run.tokens_est} tokens · {run.elapsed_s}s"
+               f" · max-tier={run.max_tier}"))
+    if run.changed_files and not (run.alerts or run.max_tier != "low"):
         print(_dim("Review: git diff   |   Undo everything: git checkout ."))
     return 0 if run.done else 1
 

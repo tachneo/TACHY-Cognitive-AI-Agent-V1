@@ -104,6 +104,16 @@ class AgentRun:
     steps: int = 0
     tokens_est: int = 0
     elapsed_s: float = 0.0
+    # Phase 2C-sec guardrail telemetry
+    alerts: list[str] = field(default_factory=list)   # warnings raised during the run
+    max_tier: str = "low"                             # highest risk tier reached
+    secrets_blocked: int = 0                          # total secrets redacted
+    injections_blocked: int = 0                       # total injections quarantined
+    scope_drift: list[str] = field(default_factory=list)  # edits outside plan scope
+    risk_summary: str = ""                            # final human-readable risk report
+
+
+_TIER_RANK = {"low": 0, "medium": 1, "high": 2, "forbidden": 3}
 
 
 def _extract_json(text: str) -> dict | None:
@@ -124,31 +134,8 @@ def _extract_json(text: str) -> dict | None:
     return None
 
 
-def _dispatch(sb: T.Sandbox, tool: str, args: dict, *, read_only: bool,
-              autonomy: str, approver=None) -> T.ToolResult:
-    if read_only and tool not in _READ_ONLY:
-        return T.ToolResult(False, f"tool '{tool}' not allowed during planning")
-    # Security gate — classify the call by its ACTUAL arguments, not just name.
-    tier = risk_classifier.classify_tool(tool, args)
-    if tier is RiskTier.FORBIDDEN:
-        msg = risk_classifier.reason(tool, tier)
-        log_event("coding_action_blocked", detail=f"tool={tool}; args={args}",
-                  risk_tier="forbidden", actor="shree")
-        return T.ToolResult(False, msg)
-    needs_approval = tier is RiskTier.HIGH
-    # plan_first still requires approval for ANY shell command (existing rule).
-    if tool in {"run_bash", "run_tests"} and autonomy == "plan_first":
-        needs_approval = True
-    if needs_approval:
-        what = (f"run: {args.get('command', '')}"
-                if tool in {"run_bash", "run_tests"}
-                else f"{tool}: {args.get('path', '')}")
-        if approver is None or not approver(what):
-            msg = risk_classifier.reason(tool, tier)
-            log_event("coding_action_denied",
-                      detail=f"tool={tool}; {msg}", risk_tier=tier.value,
-                      actor="shree")
-            return T.ToolResult(False, msg + " (denied / no approver)")
+def _route(sb: T.Sandbox, tool: str, args: dict) -> T.ToolResult | None:
+    """Execute a tool that has already passed the security/approval gate."""
     if tool == "read_file":
         return sb.read_file(args.get("path", ""))
     if tool == "list_dir":
@@ -164,7 +151,42 @@ def _dispatch(sb: T.Sandbox, tool: str, args: dict, *, read_only: bool,
                             args.get("new", ""))
     if tool in {"run_bash", "run_tests"}:
         return sb.run_bash(args.get("command", ""))
-    return T.ToolResult(False, f"unknown tool: {tool}")
+    return None
+
+
+def _dispatch(sb: T.Sandbox, tool: str, args: dict, *, read_only: bool,
+              autonomy: str, approver=None) -> T.ToolResult:
+    tier = risk_classifier.classify_tool(tool, args)
+
+    def _blocked(msg: str) -> T.ToolResult:
+        return T.ToolResult(False, msg, risk_tier=tier.value)
+
+    if read_only and tool not in _READ_ONLY:
+        return _blocked(f"tool '{tool}' not allowed during planning")
+    if tier is RiskTier.FORBIDDEN:
+        msg = risk_classifier.reason(tool, tier)
+        log_event("coding_action_blocked", detail=f"tool={tool}; args={args}",
+                  risk_tier="forbidden", actor="shree")
+        return _blocked(msg)
+    needs_approval = tier is RiskTier.HIGH
+    # plan_first still requires approval for ANY shell command (existing rule).
+    if tool in {"run_bash", "run_tests"} and autonomy == "plan_first":
+        needs_approval = True
+    if needs_approval:
+        what = (f"run: {args.get('command', '')}"
+                if tool in {"run_bash", "run_tests"}
+                else f"{tool}: {args.get('path', '')}")
+        if approver is None or not approver(what):
+            msg = risk_classifier.reason(tool, tier)
+            log_event("coding_action_denied",
+                      detail=f"tool={tool}; {msg}", risk_tier=tier.value,
+                      actor="shree")
+            return _blocked(msg + " (denied / no approver)")
+    res = _route(sb, tool, args)
+    if res is None:
+        return _blocked(f"unknown tool: {tool}")
+    res.risk_tier = tier.value
+    return res
 
 
 def _converse(provider, system: str, transcript: list[dict], max_tokens: int,
@@ -253,7 +275,8 @@ def _self_review(provider, run: AgentRun, sb: T.Sandbox) -> tuple[bool, str, lis
 
 def execute(task: str, workdir: str, *, plan: dict | None = None,
             autonomy: str | None = None, approver=None,
-            max_steps: int | None = None, verify: bool | None = None) -> AgentRun:
+            max_steps: int | None = None, verify: bool | None = None,
+            on_alert=None) -> AgentRun:
     s = get_settings()
     autonomy = autonomy or s.coding_autonomy
     max_steps = max_steps or s.coding_max_steps
@@ -266,6 +289,15 @@ def execute(task: str, workdir: str, *, plan: dict | None = None,
     profile = repo_profile.build(workdir)
     test_command = (s.coding_test_command or "").strip() or profile.get("test_command")
     grounding = repo_profile.as_prompt(profile)
+    plan_files = set((plan or {}).get("files_to_touch") or [])
+
+    def _alert(msg: str) -> None:
+        run.alerts.append(msg)
+        if on_alert:
+            try:
+                on_alert(msg)
+            except Exception:  # noqa: BLE001 — UI must never break the run
+                pass
 
     intro = (f"{grounding}\n\n" if grounding else "") + f"Task from Rohit:\n{task}\n"
     if plan:
@@ -342,6 +374,25 @@ def execute(task: str, workdir: str, *, plan: dict | None = None,
             run.changed_files.append(res.changed_path)
         run.turns.append(Turn(tool, args, res.output, res.ok))
 
+        # ── guardrail telemetry (Phase 2C-sec) ───────────────────
+        detail = (args.get("path") or args.get("command") or
+                  args.get("pattern") or "")
+        if res.secrets_found:
+            run.secrets_blocked += res.secrets_found
+            _alert(f"secret: {res.secrets_found} secret(s) redacted in "
+                   f"{tool} {str(detail)[:50]}")
+        if res.injection == "high":
+            run.injections_blocked += 1
+            _alert(f"injection: prompt-injection quarantined in {tool} "
+                   f"{str(detail)[:50]}")
+        if (tool in {"write_file", "edit_file"} and res.changed_path
+                and plan_files and res.changed_path not in plan_files):
+            run.scope_drift.append(res.changed_path)
+            _alert(f"scope-drift: editing {res.changed_path} — not in the "
+                   "plan's files_to_touch; confirm this is intended")
+        if _TIER_RANK.get(res.risk_tier, 0) > _TIER_RANK.get(run.max_tier, 0):
+            run.max_tier = res.risk_tier
+
         # Stuck-detection: same failing action repeated → stop and ask.
         sig = f"{tool}:{json.dumps(args, sort_keys=True)[:120]}:{res.ok}"
         recent_sigs.append(sig)
@@ -363,13 +414,49 @@ def execute(task: str, workdir: str, *, plan: dict | None = None,
     else:
         run.error = run.error or f"hit step limit ({max_steps}) without finishing"
 
+    # Over-engineering guard — flag if the change set is disproportionate.
+    if run.changed_files:
+        expected = len(plan_files) if plan_files else 0
+        if plan_files and len(run.changed_files) > expected + 2 \
+                and len(run.changed_files) >= 4:
+            _alert(f"over-engineering: changed {len(run.changed_files)} files "
+                   f"but the plan expected ~{expected}; consider a smaller change")
+        elif not plan_files and len(run.changed_files) >= 6:
+            _alert(f"over-engineering: changed {len(run.changed_files)} files "
+                   "with no plan — consider scoping the task first")
+
     # FINALIZE — one clean staged diff, no noisy checkpoint history.
     if run.changed_files:
         sb.collapse_to(base_ref)
     run.elapsed_s = round(time.monotonic() - started, 1)
+    run.risk_summary = _build_risk_summary(run)
     log_event("coding_run",
               detail=(f"task={task[:50]}; done={run.done}; verified={run.verified}; "
                       f"stuck={run.stuck}; files={len(run.changed_files)}; "
-                      f"steps={run.steps}; tokens~{run.tokens_est}"),
-              risk_tier="medium")
+                      f"steps={run.steps}; tokens~{run.tokens_est}; "
+                      f"max_tier={run.max_tier}; secrets={run.secrets_blocked}; "
+                      f"injections={run.injections_blocked}; "
+                      f"scope_drift={len(run.scope_drift)}"),
+              risk_tier=run.max_tier, actor="shree")
     return run
+
+
+def _build_risk_summary(run: AgentRun) -> str:
+    lines = [f"Risk tier reached: {run.max_tier}"]
+    if run.changed_files:
+        lines.append(f"Files changed ({len(run.changed_files)}): "
+                     + ", ".join(run.changed_files))
+    if run.secrets_blocked:
+        lines.append(f"Secrets redacted: {run.secrets_blocked} (never leaked to LLM/terminal)")
+    if run.injections_blocked:
+        lines.append(f"Injections quarantined: {run.injections_blocked}")
+    if run.scope_drift:
+        lines.append("Scope drift: " + ", ".join(run.scope_drift)
+                     + " (outside the approved plan)")
+    if run.alerts:
+        lines.append(f"Alerts ({len(run.alerts)}):")
+        for a in run.alerts:
+            lines.append(f"  ⚠ {a}")
+    if run.changed_files:
+        lines.append("Review: git diff   |   Undo everything: git checkout .")
+    return "\n".join(lines)
