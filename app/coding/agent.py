@@ -24,7 +24,9 @@ from app.coding import repo_profile
 from app.coding import tools as T
 from app.config import get_settings
 from app.llm.provider import get_coding_provider
+from app.safety import risk_classifier
 from app.safety.audit_logger import log_event
+from app.safety.policy import RiskTier
 
 _SYSTEM = (
     "You are Shree, Rohit's expert AI software engineer. You work like a senior "
@@ -126,6 +128,27 @@ def _dispatch(sb: T.Sandbox, tool: str, args: dict, *, read_only: bool,
               autonomy: str, approver=None) -> T.ToolResult:
     if read_only and tool not in _READ_ONLY:
         return T.ToolResult(False, f"tool '{tool}' not allowed during planning")
+    # Security gate — classify the call by its ACTUAL arguments, not just name.
+    tier = risk_classifier.classify_tool(tool, args)
+    if tier is RiskTier.FORBIDDEN:
+        msg = risk_classifier.reason(tool, tier)
+        log_event("coding_action_blocked", detail=f"tool={tool}; args={args}",
+                  risk_tier="forbidden", actor="shree")
+        return T.ToolResult(False, msg)
+    needs_approval = tier is RiskTier.HIGH
+    # plan_first still requires approval for ANY shell command (existing rule).
+    if tool in {"run_bash", "run_tests"} and autonomy == "plan_first":
+        needs_approval = True
+    if needs_approval:
+        what = (f"run: {args.get('command', '')}"
+                if tool in {"run_bash", "run_tests"}
+                else f"{tool}: {args.get('path', '')}")
+        if approver is None or not approver(what):
+            msg = risk_classifier.reason(tool, tier)
+            log_event("coding_action_denied",
+                      detail=f"tool={tool}; {msg}", risk_tier=tier.value,
+                      actor="shree")
+            return T.ToolResult(False, msg + " (denied / no approver)")
     if tool == "read_file":
         return sb.read_file(args.get("path", ""))
     if tool == "list_dir":
@@ -140,12 +163,7 @@ def _dispatch(sb: T.Sandbox, tool: str, args: dict, *, read_only: bool,
         return sb.edit_file(args.get("path", ""), args.get("old", ""),
                             args.get("new", ""))
     if tool in {"run_bash", "run_tests"}:
-        cmd = args.get("command", "")
-        if T.is_destructive(cmd) or autonomy == "plan_first":
-            if approver is None or not approver(f"run: {cmd}"):
-                return T.ToolResult(False, "command needs approval (denied/"
-                                           "no approver)")
-        return sb.run_bash(cmd)
+        return sb.run_bash(args.get("command", ""))
     return T.ToolResult(False, f"unknown tool: {tool}")
 
 

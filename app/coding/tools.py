@@ -14,6 +14,9 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.safety import prompt_injection_guard as inj
+from app.safety import secret_detector as sec
+
 MAX_READ_BYTES = 200_000
 MAX_OUTPUT = 20_000
 
@@ -23,6 +26,39 @@ class ToolResult:
     ok: bool
     output: str
     changed_path: str | None = None
+    secrets_found: int = 0        # count of secrets redacted from this output
+    injection: str = "none"       # none | low | medium | high (quarantined)
+
+
+def _secure(text: str, *, source: str) -> tuple[str, int, str]:
+    """Redact secrets and quarantine prompt-injection in untrusted content.
+
+    Returns (safe_text, secrets_found, injection_severity). High-precision
+    secret redaction runs first (so secret values never reach the LLM), then
+    high-severity injection lines are quarantined in place. Medium/low
+    injection is recorded but not altered, to avoid mangling legitimate prose.
+    """
+    safe, finds = sec.redact(text)
+    if sec.is_secrets_path(source):
+        env_safe, env_finds = sec.redact_env_values(text)
+        # env redaction is stricter for .env-style files; prefer it
+        safe, finds = env_safe, env_finds
+    g = inj.inspect(safe, source=source)
+    if g.blocked:
+        safe = g.sanitized
+    return safe, len(finds), g.severity
+
+
+def _security_note(secrets: int, injection: str) -> str:
+    notes: list[str] = []
+    if secrets:
+        notes.append(
+            f"[SECURITY: {secrets} secret(s) redacted — never paste secret "
+            "values; edit surrounding lines, never log them]")
+    if injection == "high":
+        notes.append("[SECURITY: prompt-injection detected and quarantined "
+                     "in this content]")
+    return ("\n" + "\n".join(notes)) if notes else ""
 
 
 class Sandbox:
@@ -45,9 +81,12 @@ class Sandbox:
                 return ToolResult(False, f"not a file: {path}")
             data = p.read_bytes()[:MAX_READ_BYTES]
             text = data.decode("utf-8", errors="replace")
+            safe, n_sec, sev = _secure(text, source=path)
             numbered = "\n".join(f"{i+1}\t{ln}"
-                                 for i, ln in enumerate(text.splitlines()))
-            return ToolResult(True, numbered[:MAX_OUTPUT])
+                                 for i, ln in enumerate(safe.splitlines()))
+            out = numbered + _security_note(n_sec, sev)
+            return ToolResult(True, out[:MAX_OUTPUT], secrets_found=n_sec,
+                              injection=sev)
         except (OSError, PermissionError) as e:
             return ToolResult(False, str(e))
 
@@ -106,12 +145,27 @@ class Sandbox:
                 continue
             if len(hits) >= 200:
                 break
-        return ToolResult(True, "\n".join(hits)[:MAX_OUTPUT] or "(no matches)")
+        raw = "\n".join(hits)[:MAX_OUTPUT]
+        safe, n_sec, sev = _secure(raw, source=f"grep:{pattern}")
+        return ToolResult(True, safe + _security_note(n_sec, sev) or "(no matches)",
+                          secrets_found=n_sec, injection=sev)
 
     # ── mutating (checkpointed) ─────────────────────────────────
-    def _git_checkpoint(self, label: str) -> None:
+    def _git_checkpoint(self, label: str, path: str | None = None) -> None:
+        """Commit only `path` so Rohit's unrelated working-tree changes are
+        never swept into Shree's checkpoints. No-op if not a git repo."""
         try:
-            if (self.root / ".git").exists():
+            if not (self.root / ".git").exists():
+                return
+            if path:
+                # stage only this file, then partial-commit only this file
+                subprocess.run(["git", "-C", str(self.root), "add", "--", path],
+                               capture_output=True, timeout=20)
+                subprocess.run(["git", "-C", str(self.root), "commit", "-q",
+                                "--no-verify", "-m",
+                                f"shree checkpoint: {label}", "--", path],
+                               capture_output=True, timeout=20)
+            else:
                 subprocess.run(["git", "-C", str(self.root), "add", "-A"],
                                capture_output=True, timeout=20)
                 subprocess.run(["git", "-C", str(self.root), "commit", "-q",
@@ -123,7 +177,7 @@ class Sandbox:
     def write_file(self, path: str, content: str) -> ToolResult:
         try:
             p = self.resolve(path)
-            self._git_checkpoint(f"before write {path}")
+            self._git_checkpoint(f"before write {path}", path)
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content, encoding="utf-8")
             return ToolResult(True, f"wrote {len(content)} bytes to {path}",
@@ -144,7 +198,7 @@ class Sandbox:
             if count > 1:
                 return ToolResult(False, f"old_string is not unique ({count} "
                                          "matches) — add surrounding context")
-            self._git_checkpoint(f"before edit {path}")
+            self._git_checkpoint(f"before edit {path}", path)
             p.write_text(text.replace(old, new, 1), encoding="utf-8")
             return ToolResult(True, f"edited {path}", changed_path=path)
         except (OSError, PermissionError) as e:
@@ -158,8 +212,14 @@ class Sandbox:
             out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr)
                                          if proc.stderr else "")
             tag = "" if proc.returncode == 0 else f"[exit {proc.returncode}]\n"
-            return ToolResult(proc.returncode == 0, (tag + out)[:MAX_OUTPUT]
-                              or "(no output)")
+            raw = (tag + out)[:MAX_OUTPUT] or "(no output)"
+            # Secure the output so `cat .env` / `git diff` over a secret never
+            # leaks values to the LLM transcript or the terminal.
+            safe, n_sec, sev = _secure(raw, source=(command or "")[:60])
+            return ToolResult(proc.returncode == 0,
+                              (safe + _security_note(n_sec, sev))[:MAX_OUTPUT]
+                              or "(no output)",
+                              secrets_found=n_sec, injection=sev)
         except subprocess.TimeoutExpired:
             return ToolResult(False, f"command timed out after {timeout}s")
         except OSError as e:
@@ -197,6 +257,19 @@ DESTRUCTIVE = re.compile(
     r"git\s+push|git\s+reset\s+--hard|drop\s+database|drop\s+table|"
     r"truncate|>\s*/dev/|curl[^|]*\|\s*(ba)?sh|wget[^|]*\|\s*(ba)?sh)\b", re.I)
 
+# Commands that are FORBIDDEN outright — no approver can authorize them.
+# Mirrors app.safety.risk_classifier._FORBIDDEN_CMD; kept here too so the
+# sandbox itself is safe to call directly (defense in depth).
+FORBIDDEN = re.compile(
+    r"(?:\bmkfs[\s.]|\bdd\s+if=.*\s+of=/dev/|:\s*\(\)\s*\{[^}]*\};|"
+    r"\bshutdown(?:\s|$)|\breboot(?:\s|$)|\bhalt(?:\s|$)|\bpoweroff(?:\s|$)|"
+    r">\s*/dev/sd[a-z]|\bchmod\s+-R\s+000\b|"
+    r"\brm\s+-rf\s+/(?:\s|$)|\brm\s+-rf\s+(?:~|\$HOME)(?:/|\s|$))", re.I)
+
 
 def is_destructive(command: str) -> bool:
     return bool(DESTRUCTIVE.search(command or ""))
+
+
+def is_forbidden(command: str) -> bool:
+    return bool(FORBIDDEN.search(command or ""))
