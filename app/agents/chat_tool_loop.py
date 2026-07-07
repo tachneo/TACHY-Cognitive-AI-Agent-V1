@@ -72,11 +72,16 @@ _SYSTEM = (
     "Tools: read_conversation{conversation_id}, search_contact{username}, "
     "web_lookup{query}, check_my_memory{query}, "
     "read_file{path}, git_log{limit}, git_diff{}, git_show{ref}, "
-    "run_tests{command?}, finish{reply}.\n"
+    "run_tests{command?}, github_read{owner,repo,path?|url}, "
+    "github_commits{owner,repo|url}, finish{reply}.\n"
     "The read_file/git_log/git_diff/git_show/run_tests tools work on YOUR OWN "
     "code repo only — use them when Papa asks what changed, to verify updates "
     "he made to you, or to check your own tests. Paths are relative to your "
     "repo root (e.g. 'app/brain/cognitive_loop.py').\n"
+    "github_read/github_commits read your OWN GitHub repo "
+    "(tachneo/TACHY-Cognitive-AI-Agent-V1) when Papa links it — use them to "
+    "compare what's on GitHub vs your local copy. You CANNOT read other "
+    "people's repos.\n"
     "Rules: use a tool ONLY when you genuinely need its result to answer "
     "well; if you already know the answer, call finish immediately. After a "
     "tool result, either call another tool or finish. Never more than "
@@ -200,6 +205,36 @@ def _call_tool(tool: str, args: dict) -> tuple[bool, str]:
                        or ".venv/bin/pytest -q -p no:cacheprovider")
             res = _self_sandbox().run_bash(cmd, timeout=180)
             return res.ok, res.output
+        # ── GitHub self-lookup (allowlisted to Shree's own repo) ─────────
+        if tool == "github_read":
+            from app.tools import github_lookup as gh
+            owner = str(args.get("owner", "")).strip()
+            repo = str(args.get("repo", "")).strip()
+            path = str(args.get("path", "")).strip()
+            if not owner or not repo:
+                # Allow a URL arg as a convenience.
+                url = str(args.get("url", "")).strip()
+                parsed = gh.parse_github_url(url) if url else None
+                if not parsed:
+                    return False, "missing owner/repo (or url)"
+                owner, repo, path = parsed["owner"], parsed["repo"], parsed["path"]
+            return gh.read_path(owner, repo, path)
+        if tool == "github_commits":
+            from app.tools import github_lookup as gh
+            owner = str(args.get("owner", "")).strip()
+            repo = str(args.get("repo", "")).strip()
+            if not owner or not repo:
+                url = str(args.get("url", "")).strip()
+                parsed = gh.parse_github_url(url) if url else None
+                if not parsed:
+                    return False, "missing owner/repo (or url)"
+                owner, repo = parsed["owner"], parsed["repo"]
+            limit = args.get("limit", 10)
+            try:
+                limit = int(limit)
+            except (TypeError, ValueError):
+                limit = 10
+            return gh.recent_commits(owner, repo, limit)
         return False, f"unknown tool: {tool}"
     except Exception as exc:  # noqa: BLE001 — a tool failure must not kill chat
         return False, f"{type(exc).__name__}: {exc}"
@@ -255,6 +290,9 @@ def should_run_tool_loop(message: str) -> bool:
         "check kar ke batao", "verify karke", "verify karke batao",
         "apne code me", "apne aap ko check", "check yourself",
         "verify yourself", "check your own",
+        # GitHub self-lookup: Papa links her repo
+        "github.com/", "github link", "github pe", "github par",
+        "repo dekho", "repository dekho", "github se padho",
     )
     return any(c in m for c in cues)
 

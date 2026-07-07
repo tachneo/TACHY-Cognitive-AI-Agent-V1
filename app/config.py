@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     chat_model: str = "claude-sonnet-5"
     chat_anthropic_key: str = ""            # falls back to coding key / llm_api_key
 
+    # GitHub self-lookup (Phase 2C-selfverify F2) — read-only PAT so Shree can
+    # read her OWN repo when Rohit links it on TODY. Enforced allowlist: she can
+    # only read repos in github_allowed_repos, never other projects. Never
+    # commit a real token; set it in .env.
+    github_token: str = ""
+    github_allowed_repos: str = "tachneo/TACHY-Cognitive-AI-Agent-V1"
+
     # Coding agent (Phase 2B) — Shree's expert coder. Prefers Claude for
     # top-tier agentic coding + tool use; falls back to the default provider
     # (NVIDIA today) when no Anthropic key is set, so it always works.
@@ -115,6 +122,10 @@ class Settings(BaseSettings):
     confidential_guard_enabled: bool = True
     confidential_dob: str = "25-08-1987"
     confidential_unlock_ttl_minutes: int = 30
+
+    # Self-improvement (Phase 2G) — Shree edits her OWN code on a branch, tests
+    # must pass, Rohit reviews/merges. Never auto-applies to main.
+    self_improve_enabled: bool = True
 
     # Autonomous social mode (Phase 2D) — Shree talks freely with anyone.
     # OFF by default: only the guardian gets auto-replies until you enable it.
