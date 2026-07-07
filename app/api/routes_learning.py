@@ -4,9 +4,19 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.brain import curriculum_learning, web_learning
+from app.brain import curriculum_learning, verifier, web_learning
 
 router = APIRouter(prefix="/learn", tags=["learning"])
+
+
+class VerifyIn(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
+
+
+@router.post("/verify")
+def verify_claim(req: VerifyIn) -> dict:
+    """Real-time web verification with a confidence level (keyless search)."""
+    return verifier.verify(req.question)
 
 
 class ExploreIn(BaseModel):

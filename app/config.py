@@ -169,6 +169,13 @@ class Settings(BaseSettings):
     web_learning_user_agent: str = "TachyBrainBot/1.0 (+https://maa.tachy.in)"
     web_learning_state_path: str = "storage/logs/web_learning_topics.json"
 
+    # Real-time verifier (Phase 2J) — Shree searches the web HERSELF and answers
+    # with a confidence level, cross-checking independent sources. Keyless/free
+    # (reuses web_explorer: DuckDuckGo → Bing → Wikipedia). Kill switch below.
+    web_search_enabled: bool = True
+    web_search_max_sources: int = 5
+    web_search_fetch_pages: int = 2      # how many top hits to read in full
+
 
 @lru_cache
 def get_settings() -> Settings:

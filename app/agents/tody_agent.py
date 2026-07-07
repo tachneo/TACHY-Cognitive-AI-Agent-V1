@@ -269,6 +269,10 @@ _SELF_IMPROVE_CMD = re.compile(
 _APPLY_IMPROVE_CMD = re.compile(
     r"\b(apply|start)\s+(self[- ]?improve(?:ment)?|improvement)\s+#?(\w+)\s*$",
     re.I)
+_LOOKUP_CMD = re.compile(
+    r"\b(search|verify|lookup|google karo|internet pe dekho|web pe dekho|"
+    r"pata karo|fact[- ]?check|dhoondh(?:o|kar)?|search karo|verify karo)\b"
+    r"[:\-\s]+(.+)$", re.I | re.S)
 _STATUS_CMD = re.compile(
     r"\b(self[- ]?check|feature[s]? (check|working|status)|kya kya (on|live) hai|"
     r"apna status|are your features|kya kaam kar rah[ae])\b", re.I)
@@ -288,6 +292,14 @@ def _guardian_command_reply(message: str) -> str | None:
     if _REPO_CMD.search(message or ""):
         from app.brain import self_repo
         return "Ye raha mera apna repo status, Papa 💛\n\n" + self_repo.summary()
+
+    # Real-time verifier: "search: X / verify: X / internet pe dekho X".
+    lk = _LOOKUP_CMD.search(message or "")
+    if lk:
+        query = (lk.group(2) or "").strip(" :\n")
+        if len(query) >= 3:
+            from app.brain import verifier
+            return verifier.answer_hinglish(query)
 
     # Live self-status: "are your features working / is self-improve live?"
     if _STATUS_CMD.search(message or ""):
