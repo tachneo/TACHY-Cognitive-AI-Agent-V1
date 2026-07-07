@@ -25,7 +25,17 @@ from app.brain.feedback import apply_feedback
 from app.brain.learning_engine import learn
 from app.brain.nurture_engine import dharma_check
 from app.config import get_settings
+from app.llm.provider import get_chat_provider as _get_chat_provider
 from app.llm.provider import get_provider
+
+
+def _reply_provider():
+    """Provider for the interactive reply. Claude when chat_provider=anthropic;
+    otherwise the module-level get_provider (kept patchable for tests)."""
+    from app.config import get_settings
+    if get_settings().chat_provider == "anthropic":
+        return _get_chat_provider()
+    return get_provider()
 from app.memory.behavior_memory import recall_preferences
 
 _SYSTEM_PROMPT = (
@@ -113,7 +123,7 @@ def process(message: str, signals: Signals | None = None,
     # Only worth fetching when an LLM is present to interpret the page text;
     # offline we stay honest and just get curious for later self-study.
     live_web = None
-    offline = getattr(get_provider(), "name", "llm") == "heuristic"
+    offline = getattr(_reply_provider(), "name", "llm") == "heuristic"
     state = behavior.get("state", {}) if behavior.get("enabled") else {}
     learn_live = _should_learn_live(message, state, decision_d)
     if not offline and behavior.get("enabled") and state.get("risk_level") != "high":
@@ -416,7 +426,7 @@ def _draft_reply(message: str, band: str, decision: dict,
     # Don't cache time-sensitive or one-off answers — they must not be replayed.
     cacheable = intent not in {"realtime_lookup", "datetime", "third_party_action"}
 
-    provider = get_provider()
+    provider = _reply_provider()
     if getattr(provider, "name", "llm") != "heuristic":  # a real LLM ("teacher")
         try:
             reply = provider.complete(system, prompt, max_tokens=max_tokens)

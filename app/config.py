@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     nvidia_temperature: float = 1.0
     nvidia_top_p: float = 0.95
 
+    # Chat brain (Phase 2F) — Shree's conversation voice. Prefers Claude for
+    # warm, sharp, human replies; falls back to the default provider. Only the
+    # interactive reply path uses this; background thinking stays on the cheap
+    # default provider so it never burns the Claude rate limit.
+    chat_provider: str = "default"          # anthropic | default
+    chat_model: str = "claude-sonnet-5"
+    chat_anthropic_key: str = ""            # falls back to coding key / llm_api_key
+
     # Coding agent (Phase 2B) — Shree's expert coder. Prefers Claude for
     # top-tier agentic coding + tool use; falls back to the default provider
     # (NVIDIA today) when no Anthropic key is set, so it always works.

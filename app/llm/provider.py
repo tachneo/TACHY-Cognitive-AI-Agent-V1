@@ -214,6 +214,20 @@ def get_provider() -> Provider:
     return HeuristicProvider()
 
 
+def get_chat_provider() -> Provider:
+    """Provider for Shree's interactive chat replies — prefers Claude (warm,
+    sharp, human) and falls back to the default provider. Background thinking
+    (inner life, learning, curriculum) keeps using get_provider() so it never
+    competes for the Claude rate limit."""
+    s = get_settings()
+    if s.chat_provider == "anthropic":
+        key = (s.chat_anthropic_key or s.coding_anthropic_key
+               or s.llm_api_key or "").strip()
+        if key:
+            return AnthropicProvider(key, s.chat_model)
+    return get_provider()
+
+
 def get_coding_provider() -> Provider:
     """Provider for Shree's coding agent — prefers Claude (best agentic coding
     + tool use); falls back to the default chat provider when no Anthropic key

@@ -25,6 +25,11 @@ def temp_db(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "heuristic")
     monkeypatch.setenv("LLM_API_KEY", "")
     monkeypatch.setenv("HF_TOKEN", "")
+    # Keep chat/coding on the offline provider in tests (never hit real Claude).
+    monkeypatch.setenv("CHAT_PROVIDER", "default")
+    monkeypatch.setenv("CHAT_ANTHROPIC_KEY", "")
+    monkeypatch.setenv("CODING_ANTHROPIC_KEY", "")
+    monkeypatch.setenv("NVIDIA_API_KEY", "")
     # Keep per-run state files out of the production storage/ tree.
     monkeypatch.setenv("EMOTION_MOOD_PATH", path + ".mood.json")
     monkeypatch.setenv("WEB_LEARNING_STATE_PATH", path + ".topics.json")
