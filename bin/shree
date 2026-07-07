@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Shree — AI coding agent launcher. Runs the plan-first agent in your repo.
+SHREE_HOME="/var/www/maa.tachy.in"
+exec "$SHREE_HOME/.venv/bin/python" -m app.coding.cli "$@"

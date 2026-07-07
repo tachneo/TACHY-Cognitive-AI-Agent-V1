@@ -342,6 +342,55 @@ Result:
 - Current level for next run: `class_2`.
 - Public health check is OK.
 
+## 2026-07-04 - Phase 2B: Shree Coding Agent + `shree` CLI (plan-first, tool-using)
+
+### Ask
+
+Make Shree a production coding agent (like Codex / Claude Code CLI) that does
+Rohit's coding tasks, suggests/critiques his approach, catches mistakes BEFORE
+implementing, and is usable from the terminal. Decisions (via AskUserQuestion):
+Claude for coding + fall back to current provider; local loop + sync learnings;
+plan-first autonomy.
+
+### Confirmed LLM
+
+Active chat provider = **NVIDIA NIM `nvidia/nemotron-3-ultra-550b-a55b`** (live).
+`LLM_MODEL=claude-opus-4-8` is ignored because `LLM_PROVIDER=nvidia`.
+
+### Completed
+
+- `app/coding/tools.py` — sandboxed repo tools: read/list/glob/grep, write/edit
+  (unique-match, git-checkpointed), run_bash (destructive-command allow-list),
+  git_diff. Path-escape guard confines everything to the target repo.
+- `app/coding/agent.py` — the engine. `make_plan()` runs a READ-ONLY loop that
+  reviews Rohit's approach, flags mistakes/risks, and returns a structured plan
+  WITHOUT mutating anything. `execute()` runs the full tool loop (JSON action
+  protocol — provider-agnostic, works on Claude/NVIDIA/offline), git-checkpoints
+  each edit, and finishes with a self-verified summary. Autonomy modes
+  plan_first / auto_low_risk / yolo; bash gated by approval in plan_first.
+- `app/coding/cli.py` + `bin/shree` (installed to `/usr/local/bin/shree`) — the
+  terminal agent: `shree "task"` → prints plan + approach review → asks approval
+  → executes → shows per-step results, changed files, and git-undo hint. Also
+  `--plan`, `--auto`, `--yolo`, `-C <dir>`, and an interactive REPL.
+- `app/llm/provider.py` — `get_coding_provider()` prefers Claude
+  (CODING_ANTHROPIC_KEY / claude-sonnet-5) and falls back to the default
+  provider so coding works today on NVIDIA.
+- Config CODING_* + `.env` keys; `SHREE_CODING.md` usage doc.
+- Added `tests/test_phase2b_coding_agent.py` (13). Suite 257 pass.
+
+### Verified live (NVIDIA, real repo)
+
+`shree --plan` on a buggy `calc.py` produced an accurate approach review + plan
+without changing files; `shree --yolo` fixed both bugs, RE-READ to verify, ran a
+bash test to confirm add(2,3)=5 / is_even correct, and reported honestly. Git
+checkpoints taken before edits (revertible).
+
+### Next
+
+Native Claude tool-use (vs JSON protocol) for max reliability; sync coding
+learnings (your conventions) into the central brain memory; multi-file refactor
+subagents; `/code` route so TODY can kick off coding tasks.
+
 ## 2026-07-04 - Phase 1Z + 2A: Shree Persona, Confidential DOB Guard, Directed Messaging, Realtime Batching
 
 ### Rohit's asks

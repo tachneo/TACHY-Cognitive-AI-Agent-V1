@@ -44,6 +44,15 @@ class Settings(BaseSettings):
     nvidia_temperature: float = 1.0
     nvidia_top_p: float = 0.95
 
+    # Coding agent (Phase 2B) — Shree's expert coder. Prefers Claude for
+    # top-tier agentic coding + tool use; falls back to the default provider
+    # (NVIDIA today) when no Anthropic key is set, so it always works.
+    coding_provider: str = "anthropic"      # anthropic | default
+    coding_anthropic_key: str = ""          # sk-ant-... (falls back to llm_api_key)
+    coding_model: str = "claude-sonnet-5"   # claude-sonnet-5 | claude-opus-4-8
+    coding_max_steps: int = 40
+    coding_autonomy: str = "plan_first"     # plan_first | auto_low_risk | yolo
+
     # Safety
     safety_enforce: bool = True
     high_risk_require_approval: bool = True

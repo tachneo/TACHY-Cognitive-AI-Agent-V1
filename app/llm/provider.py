@@ -197,6 +197,18 @@ def get_provider() -> Provider:
     return HeuristicProvider()
 
 
+def get_coding_provider() -> Provider:
+    """Provider for Shree's coding agent — prefers Claude (best agentic coding
+    + tool use); falls back to the default chat provider when no Anthropic key
+    is set, so coding always works (on NVIDIA today)."""
+    s = get_settings()
+    if s.coding_provider == "anthropic":
+        key = (s.coding_anthropic_key or s.llm_api_key or "").strip()
+        if key:
+            return AnthropicProvider(key, s.coding_model)
+    return get_provider()
+
+
 def _message_content(content: object) -> str:
     if isinstance(content, list):
         return "".join(
