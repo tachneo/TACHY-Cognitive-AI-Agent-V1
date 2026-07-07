@@ -36,6 +36,8 @@ class MemoryHit:
     content: str
     emotion_tag: str
     score: float  # recall relevance, not stored
+    related_module: str | None = None
+    related_person: str | None = None
 
 
 def _tokens(text: str) -> set[str]:
@@ -138,8 +140,21 @@ def recall(text: str, *, project: str | None = None, limit: int = 5) -> list[Mem
 def _hit(m: CognitiveMemory, score: float) -> MemoryHit:
     return MemoryHit(
         id=int(m.id), memory_type=m.memory_type, project=m.project,
-        title=m.title, content=m.content, emotion_tag=m.emotion_tag, score=score,
+        title=m.title, content=m.content, emotion_tag=m.emotion_tag,
+        score=score, related_module=m.related_module,
+        related_person=m.related_person,
     )
+
+
+def archive(memory_id: int) -> bool:
+    """Mark a memory archived so it stops appearing in search/recall (soft
+    delete — the row stays for audit). Returns True if a row was archived."""
+    with session_scope() as s:
+        row = s.get(CognitiveMemory, int(memory_id))
+        if row is None or row.is_archived:
+            return False
+        row.is_archived = True
+        return True
 
 
 def counts_by_type() -> dict[str, int]:

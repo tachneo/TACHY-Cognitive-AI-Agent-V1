@@ -58,8 +58,23 @@ def review(*, message: str, reply: str, decision: dict) -> dict:
 
     # Record the failure so the learning loop can avoid repeating it. Empty/
     # leaked replies are the most damaging "feels broken" failures — audit them
-    # so they're visible and the next turn can be better.
+    # AND store to failure_memory so Shree can recall_similar_failures before
+    # repeating the same path.
     if was_empty or leaked:
+        try:
+            from app.memory import failure_memory
+            if was_empty:
+                failure_memory.remember_failure(
+                    kind="empty_reply",
+                    context=f"message={text[:120]}",
+                    lesson="produce a substantive answer, not an acknowledgment")
+            if leaked:
+                failure_memory.remember_failure(
+                    kind="prompt_leak",
+                    context=f"message={text[:120]}",
+                    lesson="never echo scaffolding/decision-trace to the user")
+        except Exception:  # noqa: BLE001
+            pass
         try:
             log_event_safe(
                 "reply_quality_failure",

@@ -169,10 +169,38 @@ def _observe_audit_failures() -> Initiative | None:
         return None
 
 
+def _observe_mission_followup() -> Initiative | None:
+    """F5 — an open conversation mission that's due to report back to Papa with
+    what Shree has learned so far. She starts missions but never proactively
+    reported back today; this closes that loop."""
+    try:
+        from app.agents import conversation_mission
+        data = conversation_mission._load()
+        for conv_id, m in (data.get("by_target_conv") or {}).items():
+            if not conversation_mission.should_report(m):
+                continue
+            guardian_conv = m.get("guardian_conv_id")
+            if not guardian_conv:
+                continue
+            learned = "; ".join(m.get("learned", [])[-6:]) or "abhi tak zyada nahi"
+            text = (f"Papa, @{m['username']} se {m.get('exchanges', 0)} baar baat "
+                    f"hui. Ab tak jaana: {learned}. Baat jaari hai 💛 "
+                    "(ye mission report hai — approve karna to send.)")
+            return Initiative("mission_followup", int(guardian_conv), text,
+                              {"username": m.get("username"),
+                               "exchanges": m.get("exchanges"),
+                               "learned": m.get("learned", [])})
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def observe() -> Initiative | None:
     """Pick ONE thing worth proactively telling Papa about, in priority order:
-    a closable curiosity question > an open promise > a recent failure."""
-    for fn in (_observe_curiosity, _observe_promises, _observe_audit_failures):
+    a closable curiosity question > an open promise > a mission follow-up > a
+    recent failure."""
+    for fn in (_observe_curiosity, _observe_promises, _observe_mission_followup,
+               _observe_audit_failures):
         try:
             item = fn()
         except Exception:  # noqa: BLE001
