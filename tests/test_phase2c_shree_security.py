@@ -593,3 +593,88 @@ def test_audit_db_degraded_raises_one_alert(repo, monkeypatch, tmp_path):
         assert fb.exists()                     # and the call was file-logged
     finally:
         audit_logger.set_fallback_path("storage/logs/audit_fallback.log")
+
+
+# ── conversational mode ─────────────────────────────────────────
+
+def test_is_conversational_greetings():
+    assert agent.is_conversational("hi")
+    assert agent.is_conversational("kaisi ho tum")
+    assert agent.is_conversational("namaste shree")
+    assert agent.is_conversational("hey")
+    assert agent.is_conversational("good morning")
+
+
+def test_is_conversational_who_are_you():
+    assert agent.is_conversational("who are you")
+    assert agent.is_conversational("what can you do")
+
+
+def test_is_conversational_thanks_and_bye():
+    assert agent.is_conversational("thanks")
+    assert agent.is_conversational("dhanyawad shree")
+    assert agent.is_conversational("bye")
+
+
+def test_is_conversational_coding_tasks_are_not_conversational():
+    assert not agent.is_conversational("add rate limiting to the login endpoint")
+    assert not agent.is_conversational("fix the failing test")
+    assert not agent.is_conversational("refactor the fee module")
+    assert not agent.is_conversational("update app/main.py")
+    assert not agent.is_conversational("hi shree, can you fix the login bug")
+
+
+def test_is_conversational_empty():
+    assert not agent.is_conversational("")
+    assert not agent.is_conversational("   ")
+
+
+def test_chat_returns_provider_reply(monkeypatch):
+    llm = _ScriptedLLM(["Main theek hoon Papa, aap batao!"])
+    monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
+    reply = agent.chat("kaisi ho tum")
+    assert "theek hoon" in reply
+
+
+def test_chat_falls_back_on_llm_error(monkeypatch):
+    class _Boom:
+        name = "boom"
+        def complete(self, system, prompt, max_tokens=800):
+            raise RuntimeError("nvidia down")
+    monkeypatch.setattr(agent, "get_coding_provider", lambda: _Boom())
+    reply = agent.chat("hello")
+    assert "offline" in reply.lower()
+    assert "papa" in reply.lower()
+
+
+def test_chat_uses_coding_provider_so_nvidia_fallback_works(monkeypatch):
+    """Without an Anthropic key, get_coding_provider returns the NVIDIA/default
+    provider — chat must use it, not crash."""
+    from app.config import get_settings
+    monkeypatch.setenv("CODING_ANTHROPIC_KEY", "")
+    monkeypatch.setenv("LLM_API_KEY", "")
+    get_settings.cache_clear()
+    llm = _ScriptedLLM(["Hi Papa!"])
+    monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
+    assert "Hi Papa" in agent.chat("hi")
+    get_settings.cache_clear()
+
+
+def test_cli_routes_conversational_to_chat(repo, monkeypatch, capsys):
+    monkeypatch.setattr(agent, "chat", lambda m, w=None: "I'm good, Papa!")
+    from app.coding import cli
+    rc = cli.main(["-C", str(repo), "kaisi ho tum"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "I'm good, Papa!" in out
+    assert "plan" not in out.lower()
+
+
+def test_cli_routes_coding_task_to_plan(repo, monkeypatch, capsys):
+    llm = _ScriptedLLM([json.dumps({"plan": _plan(["app/main.py"])})])
+    monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
+    from app.coding import cli
+    rc = cli.main(["--plan", "-C", str(repo), "fix the login bug"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Shree's plan" in out

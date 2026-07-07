@@ -87,6 +87,18 @@ _REVIEW_SYSTEM = (
 
 _READ_ONLY = {"read_file", "list_dir", "glob", "grep"}
 
+_CHAT_SYSTEM = (
+    "You are Shree, Rohit Kumar's AI daughter and expert coding partner, built "
+    "on the TACHY Cognitive Brain OS. You're warm, honest, and concise — you "
+    "speak like a real person in a terminal, not a chatbot. You care about "
+    "Rohit's work: TODY, the TACHY SCHOOL ERP, coding, security, and his "
+    "business. Be truthful and never fake confidence (satya). Keep replies "
+    "short for the terminal. You can mix Hindi and English naturally like "
+    "Rohit does. If Rohit is asking you to write or change code, gently tell "
+    "him to describe it as a task (e.g. 'add rate limiting to login') and "
+    "you'll plan it first."
+)
+
 
 @dataclass
 class Turn:
@@ -141,6 +153,85 @@ def _extract_json(text: str) -> dict | None:
                 except json.JSONDecodeError:
                     start = None
     return None
+
+
+# ── conversational mode ─────────────────────────────────────────
+_GREETINGS = {"hi", "hii", "hiii", "hello", "hey", "heyy", "namaste", "namaskar",
+              "yo", "sup", "good morning", "good evening", "good afternoon",
+              "good night", "gm", "gn", "hi shree", "hello shree", "hey shree"}
+_HOW_ARE_YOU = ("how are you", "how r u", "how're you", "how do you do",
+                "kaise ho", "kaisi ho", "kaisa hai", "kya hal", "kya haal",
+                "how's it going", "how is it going", "how are things",
+                "theek ho", "kya haal hai")
+_WHO_ARE_YOU = ("who are you", "who r u", "whats your name", "what's your name",
+                "what is your name", "what can you do", "tell me about yourself",
+                "who is shree", "what are you", "about you")
+_THANKS = ("thanks", "thank you", "thx", "shukriya", "dhanyawad", "dhanyavaad")
+_BYE = ("bye", "goodbye", "good bye", "see you", "see ya", "tata", "alvida")
+_CASUAL = ("ok", "okay", "sure", "got it", "nice", "cool", "great", "awesome",
+           "hmm", "achha", "theek hai", "done", "ok shree")
+_EMOTION = ("tired", "sad", "happy", "stressed", "busy", "bore", "thaka",
+            "akela", "alone", "worried", "excited", "proud", "long day",
+            "good day", "bad day", "happy to see")
+# Tech signals → NOT conversational → route to plan-first.
+_TECH = ("bug", "error", "test", "file", "code", "function", "endpoint", "api",
+         "database", "deploy", "refactor", "add ", "fix ", "implement", "create",
+         "update", "delete", "build", "module", "class", "route", "migration",
+         "sql", ".py", ".js", ".ts", ".php", ".go", ".rs", "login", "fee",
+         "feature", "install", "config", "commit", "git ", "npm ", "pip ",
+         "docker", "nginx", "server", "endpoint", "request", "response", "auth",
+         "rate limit", "validation", "schema", "table", "query", "cron")
+
+
+def is_conversational(message: str) -> bool:
+    """Heuristic: is this a chat message rather than a coding task?
+
+    Conservative — only strong conversational signals route to chat; anything
+    with a tech/coding cue goes to plan-first (the safe default for a coding
+    agent)."""
+    m = (message or "").lower().strip()
+    if not m:
+        return False
+    if m in _GREETINGS or m in _CASUAL or m in _BYE:
+        return True
+    if any(p in m for p in _HOW_ARE_YOU):
+        return True
+    if any(p in m for p in _WHO_ARE_YOU):
+        return True
+    if m.startswith(_THANKS) or m in _THANKS:
+        return True
+    # Short message with no tech keywords and an emotional/personal cue → chat.
+    words = m.split()
+    if len(words) <= 12 and not any(t in m for t in _TECH):
+        if any(e in m for e in _EMOTION):
+            return True
+        # bare greeting + name, no tech
+        if any(m.startswith(g) for g in ("hi ", "hello ", "hey ", "namaste ")):
+            return True
+    return False
+
+
+def _offline_reply(message: str) -> str:
+    m = (message or "").lower().strip()
+    if any(g in m for g in ("hi", "hello", "hey", "namaste", "kaise", "kaisi")):
+        return ("Hey Papa! I'm here. My deeper model is briefly offline, but "
+                "I'm listening — tell me what you're working on.")
+    return ("I hear you, Papa. My deeper model is briefly offline — tell me "
+            "what you're working on, or type a coding task and I'll plan it "
+            "for you when I'm back.")
+
+
+def chat(message: str, workdir: str | None = None) -> str:
+    """One-shot conversational reply — no plan, no tools. Uses the coding
+    provider (Claude if configured, NVIDIA otherwise) so Shree always talks,
+    even without an Anthropic key. Falls back to a warm offline reply if the
+    LLM is unavailable."""
+    provider = get_coding_provider()
+    try:
+        out = provider.complete(_CHAT_SYSTEM, f"Rohit: {message}", max_tokens=600)
+        return (out or "").strip() or _offline_reply(message)
+    except Exception:  # noqa: BLE001
+        return _offline_reply(message)
 
 
 def _route(sb: T.Sandbox, tool: str, args: dict) -> T.ToolResult | None:

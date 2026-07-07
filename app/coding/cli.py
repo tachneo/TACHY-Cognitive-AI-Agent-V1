@@ -80,7 +80,17 @@ def _approver(what: str) -> bool:
     return _ask(f"Allow → {what}?")
 
 
+def _chat(message: str, workdir: str) -> int:
+    print(_dim(f"repo: {workdir}"))
+    print(_dim("talking…\n"))
+    reply = agent.chat(message, workdir)
+    print(_bold("Shree ") + _cyan("› ") + reply)
+    return 0
+
+
 def _run_task(task: str, workdir: str, autonomy: str, plan_only: bool) -> int:
+    if agent.is_conversational(task):
+        return _chat(task, workdir)
     print(_dim(f"repo: {workdir}"))
     print(_dim("thinking about your approach…"))
     planned = agent.make_plan(task, workdir)
