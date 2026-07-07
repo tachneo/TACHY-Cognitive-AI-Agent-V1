@@ -1,16 +1,24 @@
 """Central configuration for TACHY Cognitive Brain OS V1.
 
-Loaded once from the environment (.env). Never log secrets.
+Loaded once from the environment (.env). Never log secrets. The .env is
+resolved from the project root (the parent of this package) so the brain
+configures correctly no matter which directory a process runs from — e.g.
+`shree` invoked from Rohit's home still loads /var/www/maa.tachy.in/.env.
+Real environment variables still take priority over the file.
 """
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_ENV_FILE = _PROJECT_ROOT / ".env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=str(_ENV_FILE), extra="ignore")
 
     # App
     app_name: str = "TACHY Cognitive AI"
