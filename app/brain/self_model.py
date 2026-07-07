@@ -56,6 +56,13 @@ def describe_self() -> dict:
         "has_emotion_engine": s.emotion_engine_enabled,
         "has_inner_life": s.inner_life_enabled,
         "has_web_learning": s.web_learning_enabled,
+        # Phase 2G/2H/2I — she can read, improve, deploy, diagnose, and defend
+        # herself. These are REAL and live; report them truthfully.
+        "has_self_improvement": s.self_improve_enabled,
+        "self_improvement_autonomous": s.self_improve_autonomous,
+        "has_self_diagnosis": True,
+        "has_cyber_self_defense": True,
+        "can_read_own_repo": bool(s.github_token) or True,
         "memory_types": 15,
         "memory_counts": counts,
         "total_memories": sum(counts.values()) if counts else None,

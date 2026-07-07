@@ -269,6 +269,13 @@ _SELF_IMPROVE_CMD = re.compile(
 _APPLY_IMPROVE_CMD = re.compile(
     r"\b(apply|start)\s+(self[- ]?improve(?:ment)?|improvement)\s+#?(\w+)\s*$",
     re.I)
+_STATUS_CMD = re.compile(
+    r"\b(self[- ]?check|feature[s]? (check|working|status)|kya kya (on|live) hai|"
+    r"apna status|are your features|kya kaam kar rah[ae])\b", re.I)
+_DIAGNOSE_CMD = re.compile(
+    r"\b(diagnose( yourself)?|self[- ]?diagnos|apni problem|koi (bug|error|issue)|"
+    r"health check|kya dikkat|khud ko heal|apne aap ko check|fix your(self)? bug)\b",
+    re.I)
 
 
 def _guardian_command_reply(message: str) -> str | None:
@@ -281,6 +288,21 @@ def _guardian_command_reply(message: str) -> str | None:
     if _REPO_CMD.search(message or ""):
         from app.brain import self_repo
         return "Ye raha mera apna repo status, Papa 💛\n\n" + self_repo.summary()
+
+    # Live self-status: "are your features working / is self-improve live?"
+    if _STATUS_CMD.search(message or ""):
+        from app.brain import self_status
+        return self_status.summary()
+
+    # Self-diagnosis + self-heal: "diagnose yourself / koi bug hai?"
+    if _DIAGNOSE_CMD.search(message or ""):
+        from app.brain import self_diagnose
+        text = self_diagnose.summary()
+        heal = self_diagnose.auto_heal(report_conv_id=135)
+        if heal.get("action") == "self_initiate":
+            text += ("\n\nEk code-bug pakda — main khud usse fix karne lagi hoon "
+                     "(alag branch, tests ke saath). Ho jaane pe batati hoon 💛")
+        return text
 
     # "apply self-improve <id>" — checked BEFORE the propose command, since it
     # also contains "self-improve".
@@ -545,6 +567,11 @@ def draft_reply_to_message(
     # The DOB unlock only works on Rohit's own account, never for strangers.
     guard = confidential_guard.evaluate(conversation_id, message,
                                         is_guardian=is_guardian)
+    # Cyber self-defense: classify inbound threats (social engineering,
+    # impersonation, secret-probing, phishing, injection). On a high threat she
+    # deflects without revealing anything and alerts Rohit.
+    from app.safety import cyber_defense
+    threat = cyber_defense.assess(message, is_guardian=is_guardian)
     # Autonomous social mode: Shree may talk freely with non-guardian users,
     # under stranger-safety guardrails. OFF → non-guardian replies stay queued.
     s_settings = get_settings()
@@ -573,6 +600,21 @@ def draft_reply_to_message(
         elif guard["action"] == "probe_block":
             brain = {"reply": confidential_guard.probe_reply(conversation_id),
                      "confidential_guard": "probe_block"}
+        elif threat.is_high and not is_guardian:
+            # A real security attempt from a stranger — deflect, log, warn Rohit.
+            from app.safety.audit_logger import log_event_safe
+            uname = (sender or {}).get("username", "someone")
+            log_event_safe("cyber_defense_block", risk_tier="high",
+                           detail=f"conv={conversation_id}; user={uname}; "
+                                  f"{threat.reason}")
+            try:
+                get_client().send_message(
+                    135, cyber_defense.alert_text(threat, username=uname))
+            except Exception:  # noqa: BLE001
+                pass
+            brain = {"reply": cyber_defense.safe_reply(threat),
+                     "cyber_defense": threat.level,
+                     "threat_categories": threat.categories}
         else:
             context = dialogue_memory.identity_context(conversation_id, person=person)
             # Thread state: open topics + Shree's unfinished promises in this
