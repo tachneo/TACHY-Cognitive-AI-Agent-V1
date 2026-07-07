@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
 # Shree — AI coding agent launcher. Runs the plan-first agent in your repo.
+# PYTHONPATH points at the brain project so `app.*` imports resolve from
+# anywhere; the cwd is left untouched so the agent operates on YOUR repo.
 SHREE_HOME="/var/www/maa.tachy.in"
+export PYTHONPATH="$SHREE_HOME${PYTHONPATH:+:$PYTHONPATH}"
 exec "$SHREE_HOME/.venv/bin/python" -m app.coding.cli "$@"
