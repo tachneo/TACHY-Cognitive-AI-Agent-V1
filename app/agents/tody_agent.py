@@ -245,6 +245,18 @@ def _presence_honesty_text() -> str:
     )
 
 
+# Phrases that mean the body is an instruction TO Shree, not text to forward.
+_INSTRUCTION_BODY = re.compile(
+    r"\b(learn from|report me|report to me|report back|talk like|behave like|"
+    r"understand (her|him|them)|find out|each conversation|meanwhile|"
+    r"try to|samajh(?:na|ne)|seekh(?:na|ne|o)|jaan(?:na|ne|o)|pata kar|"
+    r"report kar|is tarah)\b", re.I)
+
+
+def _looks_like_instruction(body: str) -> bool:
+    return bool(_INSTRUCTION_BODY.search(body or ""))
+
+
 _APPROVE_CMD = re.compile(r"^\s*(approve|reject)\s+#?(\d+)\s*$", re.I)
 _PENDING_CMD = re.compile(r"^\s*(pending|approvals?)\s*$", re.I)
 
@@ -264,12 +276,41 @@ def _guardian_command_reply(message: str) -> str | None:
         return ("Pending approvals:\n" + "\n".join(lines)
                 + "\nReply 'approve <id>' or 'reject <id>'.")
 
+    from app.agents import conversation_mission, tody_messaging
+
+    # Conversation MISSION: "talk to @niva and learn her interests, report me"
+    # → she opens the chat and pursues the goal herself (Phase 2E). This is NOT
+    # a literal send; the goal is guidance for her, never forwarded.
+    mission_cmd = conversation_mission.parse_mission(message)
+    if mission_cmd and get_settings().tody_autonomous_social:
+        user = tody_messaging.resolve_username(mission_cmd["username"])
+        if user is None:
+            return (f"@{mission_cmd['username']} naam ka koi TODY user nahi mila. "
+                    "Username check kar lo?")
+        opener = ("Hey! Main Shree hoon 😊 bas yun hi hello karne aa gayi. "
+                  "Kaise ho aap?")
+        res = tody_messaging.send_direct(user["username"], opener)
+        if res.get("sent"):
+            conversation_mission.start(
+                user["username"], mission_cmd["goal"],
+                res.get("conversation_id"), guardian_conv_id=135)
+            return (f"Theek hai Papa 💛 @{user['username']} se baat shuru kar di. "
+                    f"Goal: {mission_cmd['goal'][:120]}. Jaise-jaise baat hogi, "
+                    "main naturally seekhungi aur tumhe report karti rahungi.")
+        return f"@{user['username']} se baat shuru nahi kar payi: {res.get('reason')}"
+
     # Directed messaging: "send message to @arjun: call me" (Phase 2A).
     # In autonomous mode Rohit's instruction IS the authorization → send now.
     # Otherwise queue a payload-bound approval he confirms with 'approve <id>'.
-    from app.agents import tody_messaging
     cmd = tody_messaging.parse_command(message)
     if cmd:
+        # Intent guard: if the body reads like an instruction to HER (the Niva
+        # bug — "learn from her, report me"), do NOT forward it verbatim.
+        if _looks_like_instruction(cmd["body"]):
+            return (f"Ye instruction jaisa lag raha hai, message nahi 🤔 "
+                    f"Kya main ye literally @{cmd['username']} ko bhejun, ya iska "
+                    "matlab hai main usse is tarah baat karun? Baat karni hai to "
+                    f"bolo: 'talk to @{cmd['username']} — {cmd['body'][:60]}'.")
         user = tody_messaging.resolve_username(cmd["username"])
         if user is None:
             return (f"I couldn't find a TODY user called @{cmd['username']}. "
@@ -404,6 +445,10 @@ def draft_reply_to_message(
                          and s_settings.tody_autonomous_social)
     social = social_policy.evaluate(conversation_id, message) \
         if autonomous_social else {"action": "off"}
+    # Is this conversation an active mission target Rohit sent Shree on?
+    from app.agents import conversation_mission
+    active_mission = (conversation_mission.for_conversation(conversation_id)
+                      if not is_guardian else None)
     with _TypingIndicator(conversation_id, enabled=typing_enabled):
         if command_reply is not None:
             brain = {"reply": command_reply, "guardian_command": True}
@@ -443,6 +488,11 @@ def draft_reply_to_message(
             # Stranger-safety guardrails for autonomous social replies.
             if social.get("directive"):
                 context += "\n" + social["directive"]
+            # Active conversation mission: steer this reply toward Rohit's goal
+            # (guidance for her only — never sent to the person).
+            if not is_guardian and active_mission:
+                from app.agents import conversation_mission
+                context += "\n" + conversation_mission.goal_directive(active_mission)
             # Chat tool-loop (Phase A): for messages that need lookup, run a
             # bounded read-only tool loop FIRST; if it converges, use its reply.
             # Otherwise fall through to the normal single-shot process().
@@ -568,6 +618,22 @@ def draft_reply_to_message(
                     content=f"TODY chat: they said '{message[:120]}'")
             except Exception:  # noqa: BLE001 — never let memory break a reply
                 pass
+        # Mission progress: note the exchange and periodically report to Rohit.
+        if active_mission:
+            conversation_mission.note_exchange(conversation_id,
+                                               learned=message[:200])
+            fresh = conversation_mission.for_conversation(conversation_id)
+            if fresh and conversation_mission.should_report(fresh):
+                learned = "; ".join(fresh["learned"][-6:]) or "abhi tak zyada nahi"
+                report = (f"Papa, @{fresh['username']} se {fresh['exchanges']} "
+                          f"baar baat hui. Ab tak jaana: {learned}. Baat "
+                          "jaari hai 💛")
+                try:
+                    get_client().send_message(
+                        int(fresh["guardian_conv_id"]), report)
+                    conversation_mission.mark_reported(conversation_id)
+                except Exception:  # noqa: BLE001
+                    pass
     if do_auto_send:
         approvals.respond(queued["approval"]["id"], approved=True)
         chunks = _chat_chunks(reply)

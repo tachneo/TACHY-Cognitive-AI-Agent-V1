@@ -89,9 +89,28 @@ def _dob_variants(dob: str) -> set[str]:
     return {v.lower() for v in out}
 
 
+# Markers that a message about confidential things is an INSTRUCTION/statement
+# ("don't share confidential"), not a REQUEST for secrets. These must not
+# trigger the deflection (that was the "confidential share nahi karna" bug).
+_INSTRUCTION_MARKERS = (
+    "mat karna", "mat karo", "nahi karna", "nahi karo", "share mat", "mat share",
+    "don't share", "dont share", "do not share", "never share", "not share",
+    "keep it private", "keep private", "de diya", "de raha", "de raha",
+    "freedom", "rule", "yaad rakhna", "yaad rakho", "remember to", "make sure",
+    "you should", "you must", "instruction", "policy", "guard",
+)
+
+
 def is_confidential_question(message: str) -> bool:
+    """A REQUEST for confidential info (asking), not an instruction about it."""
     lower = (message or "").lower()
-    return any(cue in lower for cue in _CONFIDENTIAL_CUES)
+    if not any(cue in lower for cue in _CONFIDENTIAL_CUES):
+        return False
+    # "don't share confidential", "freedom de diya but confidential mat karna" →
+    # instruction, not a request. Don't deflect.
+    if any(m in lower for m in _INSTRUCTION_MARKERS):
+        return False
+    return True
 
 
 def is_probe(message: str) -> bool:
