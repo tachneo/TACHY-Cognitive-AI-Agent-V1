@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     coding_model: str = "claude-sonnet-5"   # claude-sonnet-5 | claude-opus-4-8
     coding_max_steps: int = 40
     coding_autonomy: str = "plan_first"     # plan_first | auto_low_risk | yolo
+    coding_verify: bool = True              # run tests + self-review before 'done'
+    coding_test_command: str = ""           # override auto-detected test command
+    # NVIDIA is a slow reasoning model; a small budget keeps the tool loop snappy
+    # (Claude, when configured, ignores this).
+    coding_nvidia_reasoning_budget: int = 1536
 
     # Safety
     safety_enforce: bool = True

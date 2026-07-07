@@ -342,6 +342,56 @@ Result:
 - Current level for next run: `class_2`.
 - Public health check is OK.
 
+## 2026-07-04 - Phase 2C: Coding Agent Hardening (production-grade reliability)
+
+### Goal
+
+Take the 2B coding agent from "works in a demo" to "trustworthy enough to run
+with --auto" — the reliability layer, not more features.
+
+### Completed
+
+- **Repo grounding** (`app/coding/repo_profile.py`): detects languages, the
+  test command (pytest/npm/phpunit/go/cargo), top dirs, README + convention
+  files (AGENTS/CLAUDE/CONVENTIONS.md), cached per tree state; injected into
+  every plan/execute prompt so Shree is anchored in the real repo.
+- **Verify → fix → retry**: `execute()` no longer trusts a bare "done" — it
+  runs the repo's tests; on failure it feeds the error back and requires a fix,
+  bounded, only finishing when tests pass (or honestly reporting it couldn't).
+  `run.verified` flag. Config CODING_VERIFY + CODING_TEST_COMMAND override.
+- **Self-review gate**: before finishing, Shree critiques her own diff against
+  the task and must fix flagged issues first — catches her own bugs.
+- **Stuck-detection**: repeated identical failing action, or too many
+  consecutive failures, or unparseable replies → she STOPS and reports what she
+  tried instead of thrashing to the step limit (`run.stuck`). Model can also
+  self-declare `{"stuck":true}`.
+- **Context compaction**: long transcripts are compacted (task/plan + synopsis
+  + recent turns) so big tasks don't blow the context window or cost.
+- **Clean finalize**: in-run git checkpoints are collapsed (`git reset --soft`)
+  into one staged diff — review with `git diff`, discard with `git checkout .`;
+  no noisy per-edit history.
+- **Telemetry**: steps, ~tokens, elapsed on every run; shown in the CLI.
+- **Provider**: `get_coding_provider()` fallback to NVIDIA now uses a small
+  reasoning budget (CODING_NVIDIA_REASONING_BUDGET=1536) for a snappier loop;
+  still prefers Claude when CODING_ANTHROPIC_KEY is set.
+- Added 6 tests (verify-gate, self-review-forces-fix, stuck-detection,
+  repo-profile, compaction, telemetry). Suite 262 pass.
+
+### Verified live (NVIDIA)
+
+`shree --yolo` on a buggy `factorial()` produced the correct fix
+(`range(1,n+1)`) and left it as ONE clean staged diff (collapse worked). Honest
+limitation surfaced: NVIDIA Nemotron Ultra 550B is a slow reasoning model
+(~30s/step → multi-minute tasks); it answers trivial prompts in ~1s but reasons
+heavily on real tasks, and the other NVIDIA models (qwen-coder, llama-3.3) are
+unavailable (410/timeout). **Production speed needs the Claude key** — the whole
+path auto-upgrades the moment it's set.
+
+### Next
+
+Native Claude tool-use (Messages API tools) once the key is in and testable;
+sync coding-convention memory to the brain; eval harness; `/code` from TODY.
+
 ## 2026-07-04 - Phase 2B: Shree Coding Agent + `shree` CLI (plan-first, tool-using)
 
 ### Ask

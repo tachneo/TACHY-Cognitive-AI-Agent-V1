@@ -168,6 +168,28 @@ class Sandbox:
     def git_diff(self) -> ToolResult:
         return self.run_bash("git diff --stat && echo '---' && git diff")
 
+    def git_head(self) -> str | None:
+        """Current commit SHA, or None if not a git repo / no commits."""
+        try:
+            p = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"],
+                               capture_output=True, text=True, timeout=10)
+            return p.stdout.strip() or None if p.returncode == 0 else None
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+    def collapse_to(self, base_ref: str | None) -> bool:
+        """Squash all in-run checkpoint commits back to `base_ref`, leaving the
+        net change as staged working-tree edits — one clean diff for review,
+        no noisy history. No-op if not a git repo."""
+        if not base_ref or not (self.root / ".git").exists():
+            return False
+        try:
+            r = subprocess.run(["git", "-C", str(self.root), "reset", "--soft",
+                                base_ref], capture_output=True, timeout=20)
+            return r.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False
+
 
 # Commands that must never run without explicit approval, even in auto mode.
 DESTRUCTIVE = re.compile(

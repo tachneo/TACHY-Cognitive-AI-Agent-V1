@@ -119,12 +119,14 @@ def test_execute_edits_file_and_finishes(repo, monkeypatch):
         '{"thought":"fix the bug","tool":"edit_file","args":{"path":"app/main.py",'
         '"old":"a - b","new":"a + b"}}',
         '{"thought":"done","done":true,"summary":"Fixed add() to use +."}',
+        '{"approved":true,"note":"correct"}',   # self-review pass
     ])
     monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
-    run = agent.execute("fix add()", str(repo), autonomy="yolo")
+    run = agent.execute("fix add()", str(repo), autonomy="yolo", verify=False)
     assert run.done is True
     assert "app/main.py" in run.changed_files
     assert (repo / "app" / "main.py").read_text().endswith("a + b\n")
+    assert run.steps >= 3 and run.tokens_est > 0
 
 
 def test_execute_gates_bash_in_plan_first(repo, monkeypatch):
@@ -147,6 +149,72 @@ def test_coding_provider_falls_back_without_anthropic_key(monkeypatch):
     # No key → falls back to the default provider (heuristic in tests).
     assert get_coding_provider().name in {"heuristic", "nvidia", "huggingface"}
     get_settings.cache_clear()
+
+
+def test_verify_gate_rejects_bare_done_until_tests_pass(repo, monkeypatch):
+    # 'done' but tests fail → agent must keep working; then a passing edit.
+    (repo / "run_tests.sh").write_text("exit 1\n")
+    monkeypatch.setenv("CODING_TEST_COMMAND", "sh run_tests.sh")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    llm = _ScriptedLLM([
+        '{"thought":"claim done early","done":true,"summary":"premature"}',
+        # after verification failure feedback, fix the test then finish
+        '{"thought":"make tests pass","tool":"write_file","args":'
+        '{"path":"run_tests.sh","content":"exit 0\\n"}}',
+        '{"thought":"now done","done":true,"summary":"fixed"}',
+        '{"approved":true,"note":"ok"}',
+    ])
+    monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
+    run = agent.execute("make the suite pass", str(repo), autonomy="yolo")
+    assert run.verified is True and run.done is True
+    get_settings.cache_clear()
+
+
+def test_self_review_forces_fix_before_done(repo, monkeypatch):
+    llm = _ScriptedLLM([
+        '{"thought":"done","done":true,"summary":"first attempt"}',
+        '{"approved":false,"issues":["forgot to handle n=0"]}',   # review rejects
+        '{"thought":"handle it","tool":"write_file","args":'
+        '{"path":"app/main.py","content":"def add(a,b):\\n    return a+b\\n"}}',
+        '{"thought":"done for real","done":true,"summary":"handled edge case"}',
+        '{"approved":true,"note":"good now"}',
+    ])
+    monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
+    run = agent.execute("fix add()", str(repo), autonomy="yolo", verify=False)
+    assert run.done is True
+    assert "handled edge case" in run.summary
+
+
+def test_stuck_detection_stops_thrashing(repo, monkeypatch):
+    # Same failing edit over and over → agent stops instead of looping to limit.
+    bad = ('{"thought":"try","tool":"edit_file","args":{"path":"app/main.py",'
+           '"old":"DOES_NOT_EXIST","new":"x"}}')
+    llm = _ScriptedLLM([bad, bad, bad, bad, bad])
+    monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
+    run = agent.execute("do impossible", str(repo), autonomy="yolo", verify=False)
+    assert run.stuck is True
+    assert run.steps < 6          # stopped early, did not burn all steps
+
+
+def test_repo_profile_detects_python_and_tests(repo):
+    from app.coding import repo_profile
+    (repo / "pyproject.toml").write_text("[tool.pytest]\n")
+    prof = repo_profile.build(str(repo))
+    assert "Python" in prof["languages"]
+    assert "pytest" in (prof["test_command"] or "")
+    assert "REPOSITORY PROFILE" in repo_profile.as_prompt(prof)
+
+
+def test_transcript_compaction_bounds_length():
+    long = [{"role": "user", "content": "task"}]
+    for i in range(60):
+        long.append({"role": "assistant", "content": f'{{"tool":"read_file{i}"}}'})
+        long.append({"role": "user", "content": f"result {i}"})
+    out = agent._compact(long, keep_recent=16)
+    assert len(out) <= 18
+    assert out[0]["content"] == "task"          # task preserved
+    assert "elided" in out[1]["content"]
 
 
 def test_cli_plan_only_smoke(repo, monkeypatch, capsys):

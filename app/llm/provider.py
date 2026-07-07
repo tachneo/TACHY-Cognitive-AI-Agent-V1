@@ -206,6 +206,15 @@ def get_coding_provider() -> Provider:
         key = (s.coding_anthropic_key or s.llm_api_key or "").strip()
         if key:
             return AnthropicProvider(key, s.coding_model)
+    # No Claude key → fall back to the default provider, but if that's NVIDIA
+    # give the coding tool loop a much smaller reasoning budget so it's snappy.
+    nvidia_key = (s.nvidia_api_key or "").strip()
+    if s.llm_provider == "nvidia" and nvidia_key:
+        return NvidiaProvider(
+            nvidia_key, s.nvidia_model, s.nvidia_base_url,
+            reasoning_budget=s.coding_nvidia_reasoning_budget,
+            temperature=s.nvidia_temperature, top_p=s.nvidia_top_p,
+        )
     return get_provider()
 
 

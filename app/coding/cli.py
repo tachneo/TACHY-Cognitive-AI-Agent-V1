@@ -90,15 +90,24 @@ def _run_task(task: str, workdir: str, autonomy: str, plan_only: bool) -> int:
             or t.args.get("pattern") or ""
         print(f"  {mark} {t.tool} {_dim(str(detail)[:70])}")
     print()
+    if run.stuck:
+        print(_yellow("⏸ Shree paused (stuck) — she stopped instead of "
+                      "thrashing:"))
+        print("  " + run.summary)
+        return 2
     if run.error:
         print(_red(f"✗ {run.error}"))
+    if run.verified:
+        print(_green("✓ tests passed") + _dim(f"  ({run.review_note})"))
+    elif run.verification:
+        print(_yellow("⚠ verification: ") + run.verification.splitlines()[-1][:120])
     if run.changed_files:
         print(_green("Changed: ") + ", ".join(run.changed_files))
     if run.summary:
         print(_bold("\n" + run.summary))
+    print(_dim(f"\n{run.steps} steps · ~{run.tokens_est} tokens · {run.elapsed_s}s"))
     if run.changed_files:
-        print(_dim("\nReview: git diff   |   Undo last checkpoint: git reset "
-                   "--hard HEAD~1"))
+        print(_dim("Review: git diff   |   Undo everything: git checkout ."))
     return 0 if run.done else 1
 
 

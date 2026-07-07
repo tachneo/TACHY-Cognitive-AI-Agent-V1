@@ -51,3 +51,33 @@ so she works today — Claude just makes her sharper.
 
 `CODING_AUTONOMY=plan_first` (recommended). Override per-run with `--auto` /
 `--yolo`.
+
+## Reliability (P0 hardening)
+
+Shree is engineered to be *trusted*, not just to demo:
+
+- **Repo grounding** — she detects your languages, test command, and
+  conventions and plans against the real repo.
+- **Verify → fix → retry** — she doesn't accept "done": she runs your tests,
+  and if they fail she reads the error and fixes it (bounded), only finishing
+  when they pass. `CODING_VERIFY=true` (set `CODING_TEST_COMMAND` to override
+  detection).
+- **Self-review** — she critiques her own diff for bugs/omissions before
+  declaring done.
+- **Stuck-detection** — if she repeats a failing step she *stops and asks*
+  instead of thrashing to the step limit.
+- **Clean history** — all in-run checkpoints collapse into one staged diff:
+  `git diff` to review, `git checkout .` to discard.
+- **Telemetry** — every run reports steps, ~tokens, and time.
+
+## Model & speed (important)
+
+Coding quality and speed depend on the model:
+
+- **Claude (recommended for real work)** — add `CODING_ANTHROPIC_KEY=sk-ant-...`.
+  Fast, best agentic tool-use. `CODING_MODEL=claude-sonnet-5` (or
+  `claude-opus-4-8` for the hardest tasks).
+- **NVIDIA Nemotron (default fallback)** — works with no extra key, but it's a
+  slow reasoning model (~30s per step), so multi-step tasks take several
+  minutes. Fine for small/async tasks; add the Claude key for snappy
+  interactive work. `CODING_NVIDIA_REASONING_BUDGET` trades quality for speed.
