@@ -52,7 +52,7 @@ def send_direct(username: str, body: str) -> dict:
               detail=f"to=@{user['username']}; conversation_id={conversation_id}",
               risk_tier="high")
     # Action continuity: remember WHO Shree messaged and what, so she can later
-    # answer "did niva reply?" / "did you send her anything?" from memory instead
+    # answer "did Niva reply?" / "did you send her anything?" from memory instead
     # of going blank. Stored as episodic with related_person = the recipient.
     try:
         from app.memory import dialogue_memory
@@ -62,6 +62,13 @@ def send_direct(username: str, body: str) -> dict:
             person=user["display_name"] or user["username"],
             importance=7,
         )
+        # B2: mark Shree's OWN outbound as processed so the worker doesn't later
+        # re-find it as an "unprocessed inbound" and count it as a mission
+        # exchange / reply to herself. Extract the sent message id defensively.
+        from app.agents.tody_agent import _sent_message_id
+        sent_id = _sent_message_id(res)
+        if sent_id is not None:
+            dialogue_memory.mark_processed("tody", conversation_id, sent_id)
     except Exception:  # noqa: BLE001 — memory must never break a successful send
         pass
     return {"sent": True, "to": user["username"],

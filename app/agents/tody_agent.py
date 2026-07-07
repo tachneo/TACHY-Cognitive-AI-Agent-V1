@@ -442,6 +442,51 @@ def _dedupe_opening(reply: str, recent_openings: list[str]) -> str:
     return reply
 
 
+# F6 — verify-before-claim: claims of completed verification that must be
+# backed by an actual tool call this turn (satya — no unverified "I checked /
+# tests pass" reaching Papa).
+_VERIFY_CLAIMS = (
+    (re.compile(r"(?i)(?:i|maine)\s+(?:have\s+)?check(?:ed|kiya|kar\s+liya)\s+"
+                r"(?:the\s+)?(?:code|changes|repo|update)|"
+                r"(?:i|maine)\s+(?:have\s+)?verified\s+the|"
+                r"dekh\s+liya\s+(?:code|changes|update)|"
+                r"check\s+kar\s+liya|verify\s+kar\s+liya|"
+                r"code\s+check\s+kiya|code\s+dekh\s+liya|"
+                r"changes\s+dekh\s+liye|update\s+dekh\s+liya"),
+     "code_check"),
+    (re.compile(r"(?i)tests?\s+(?:are\s+)?pass(?:ing|ed|ho\s+gaye|honge)|"
+                r"tests?\s+(?:chal\s+gaye|work\s+kar\s+rahe)|"
+                r"(?:all\s+)?tests?\s+pass|test\s+suite\s+pass"),
+     "run_tests"),
+)
+_CODE_TOOLS = {"read_file", "git_diff", "git_log", "git_show"}
+
+
+def _verify_before_claim(reply: str, brain: dict) -> str:
+    """If Shree claims a completed verification as fact but didn't run the
+    backing tool this turn, prepend an honest correction (satya). If she DID
+    run the tool, the claim stands."""
+    if not reply:
+        return reply
+    tool_calls = [c.get("tool") for c in (brain.get("tool_calls") or [])]
+    for rx, needed in _VERIFY_CLAIMS:
+        if not rx.search(reply):
+            continue
+        if needed == "code_check" and not (set(tool_calls) & _CODE_TOOLS):
+            log_event("unverified_claim_softened",
+                      detail="kind=code_check; tools=" + ",".join(tool_calls),
+                      risk_tier="low", actor="shree")
+            return ("(Sach bolu — maine abhi actually code check nahi kiya is "
+                    "reply mein. Bolo to verify karke batau.) " + reply)
+        if needed == "run_tests" and "run_tests" not in tool_calls:
+            log_event("unverified_claim_softened",
+                      detail="kind=run_tests; tools=" + ",".join(tool_calls),
+                      risk_tier="low", actor="shree")
+            return ("(Maine abhi tests nahi chalaye — to 'pass' pakka bolna "
+                    "galat hoga. Bolo to chala ke verify karu.) " + reply)
+    return reply
+
+
 def draft_reply_to_message(
     conversation_id: int,
     message: str,
@@ -607,6 +652,11 @@ def draft_reply_to_message(
             )
             log_event("false_action_suppressed",
                       detail=f"conversation_id={conversation_id}", risk_tier="low")
+    # F6 — verify before claiming: if Shree states a completed verification
+    # ("I checked the code", "tests pass") as fact, she must have actually run
+    # the tool this turn. If not, soften to an honest "let me verify" instead
+    # of letting an unverified claim reach Papa (satya).
+    reply = _verify_before_claim(reply, brain)
     dialogue_memory.remember_turn(
         channel="tody",
         conversation_id=conversation_id,

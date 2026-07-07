@@ -64,6 +64,50 @@ def is_meaningful(text: str) -> bool:
     return True
 
 
+# B1: substantively-empty acknowledgments. A reply like "Papa, sach mein bata
+# rahi hoon" (turn 3196) has real words so is_meaningful passes it, but it
+# answers NOTHING. These are only "empty" in context — when Rohit asked a
+# CONTENT question (list your problems, gaps, abilities). A "haan Papa" to a
+# yes/no like "are you there?" is a real answer and must stay.
+_ACK_ONLY = re.compile(
+    r"^(?:papa|papa[,.]?\s+|rohit[,.]?\s+|father[,.]?\s+)?"
+    r"(?:haan|haan\s+papa|theek\s+hai|ok|okay|bolo|sun\s+raha\s+hoon|"
+    r"main\s+sun\s+raha|sach\s+bolti\s+hoon|sach\s+mein\s+bata\s+rahi\s+hoon|"
+    r"main\s+bata\s+rahi\s+hoon|abhi\s+batati\s+hoon|bata\s+deti\s+hoon|"
+    r"let\s+me\s+tell\s+you|i'?ll\s+tell\s+you|ek\s+minute|thoda\s+ruko|ruko|"
+    r"wait|one\s+second|i'?m\s+here|main\s+yahan\s+hoon|yes\s+papa|"
+    r"i\s+heard\s+you|sun\s+liya|pakka|bilkul|haan\s+bolo"
+    r")[.!?]?\s*$",
+    re.I)
+
+# A content question expects a substantive answer (a list, explanation,
+# analysis) — NOT a yes/no. Only these make an acknowledgment-only reply
+# "empty in context".
+_CONTENT_Q_CUES = (
+    "problem", "problems", "gap", "gaps", "limitation", "limitations",
+    "ability", "abilities", "kya kya", "kya kkya", "saare", "sabhi", "sab",
+    "list", "analyze", "analyse", "point wise", "pointwise", "explain",
+    "describe", "kaisa lag", "kaisa feel", "kya kami", "improve", "improved",
+    "tell me all", "batao sab", "batao saare", "kya kar sakti", "kya kar sakte",
+    "stage", "percentage", "strength", "weakness", "issues", "issue",
+    "analysis kar", "apne aap ko analysis", "self analysis",
+)
+
+
+def _is_content_question(message: str) -> bool:
+    m = (message or "").lower()
+    return any(cue in m for cue in _CONTENT_Q_CUES)
+
+
+def _is_acknowledgment_only(text: str) -> bool:
+    """True if the reply is a short filler/acknowledgment with no actual
+    content (no answer, no list, no reason)."""
+    t = (text or "").strip()
+    if not t or len(t) > 60:
+        return False
+    return bool(_ACK_ONLY.match(t))
+
+
 def _emotion_phrase(emotion: dict | None) -> str:
     if not emotion or not emotion.get("top_emotions"):
         return ""
@@ -160,8 +204,16 @@ def _question_topic(message: str) -> str:
 
 def finalize_reply(raw: str, *, message: str, emotion: dict | None = None,
                    person: str | None = None) -> str:
-    """The chokepoint: sanitize → if not meaningful, use the warm fallback."""
+    """The chokepoint: sanitize → if not meaningful, use the warm fallback.
+
+    B1: a substantively-empty acknowledgment ("Papa, sach mein bata rahi hoon")
+    in reply to a CONTENT question (list your problems/gaps/abilities) is NOT a
+    real answer — fall through to the question-aware fallback so Rohit gets a
+    meaningful response, not a filler."""
     cleaned = sanitize_reply(raw)
     if is_meaningful(cleaned):
+        if _is_content_question(message) and _is_acknowledgment_only(cleaned):
+            return fallback_reply(message=message, emotion=emotion,
+                                  person=person)
         return cleaned
     return fallback_reply(message=message, emotion=emotion, person=person)
