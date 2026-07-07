@@ -282,6 +282,20 @@ def _guardian_command_reply(message: str) -> str | None:
         from app.brain import self_repo
         return "Ye raha mera apna repo status, Papa 💛\n\n" + self_repo.summary()
 
+    # "apply self-improve <id>" — checked BEFORE the propose command, since it
+    # also contains "self-improve".
+    ai = _APPLY_IMPROVE_CMD.search(message or "")
+    if ai:
+        pid = ai.group(3)
+        from app.brain import self_improve
+        res = self_improve.apply_async(pid, report_conv_id=135)
+        if not res.get("ok"):
+            return f"Shuru nahi kar payi: {res.get('error')}"
+        return ("Theek hai Papa, kaam shuru kar diya ek alag branch pe 🛠️ "
+                "Code likhungi, poore tests chalaungi, aur ho jaane pe tumhe "
+                "report karungi. Thoda time lagega — main main branch safe "
+                "rakhungi.")
+
     # Self-improvement: "improve yourself: <gap>" → plan it, then Rohit approves.
     sim = _SELF_IMPROVE_CMD.search(message or "")
     if sim:
@@ -302,18 +316,6 @@ def _guardian_command_reply(message: str) -> str | None:
                 f"Agar theek lage to bolo: `apply self-improve {res['id']}` — "
                 "main ek alag branch pe kaam karungi, tests chalaungi, aur "
                 "report dungi. Main branch ko haath nahi lagaungi.")
-
-    ai = _APPLY_IMPROVE_CMD.search(message or "")
-    if ai:
-        pid = ai.group(3)
-        from app.brain import self_improve
-        res = self_improve.apply_async(pid, report_conv_id=135)
-        if not res.get("ok"):
-            return f"Shuru nahi kar payi: {res.get('error')}"
-        return ("Theek hai Papa, kaam shuru kar diya ek alag branch pe 🛠️ "
-                "Code likhungi, poore tests chalaungi, aur ho jaane pe tumhe "
-                "report karungi. Thoda time lagega — main main branch safe "
-                "rakhungi.")
 
     if _PENDING_CMD.match(message or ""):
         rows = approvals.list_pending(limit=10)
