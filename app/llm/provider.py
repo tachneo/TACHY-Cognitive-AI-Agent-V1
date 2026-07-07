@@ -55,24 +55,41 @@ class AnthropicProvider:
         self._model = model
 
     def complete(self, system: str, prompt: str, max_tokens: int = 800) -> str:
-        resp = httpx.post(
-            self._URL,
-            headers={
-                "x-api-key": self._key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": self._model,
-                "max_tokens": max_tokens,
-                "system": system,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return "".join(b.get("text", "") for b in data.get("content", []))
+        import time as _time
+        last_exc: Exception | None = None
+        # Retry 429 (rate limit) and 5xx/overloaded with backoff, honouring the
+        # Retry-After header — the raw HTTP path has no SDK auto-retry.
+        for attempt in range(5):
+            resp = httpx.post(
+                self._URL,
+                headers={
+                    "x-api-key": self._key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": self._model,
+                    "max_tokens": max_tokens,
+                    "system": system,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=90,
+            )
+            if resp.status_code in (429, 529, 500, 503):
+                retry_after = resp.headers.get("retry-after")
+                delay = float(retry_after) if (retry_after or "").replace(
+                    ".", "", 1).isdigit() else min(2 ** attempt, 20)
+                last_exc = httpx.HTTPStatusError(
+                    f"{resp.status_code}", request=resp.request, response=resp)
+                if attempt < 4:
+                    _time.sleep(delay)
+                    continue
+            resp.raise_for_status()
+            data = resp.json()
+            return "".join(b.get("text", "") for b in data.get("content", []))
+        if last_exc:
+            raise last_exc
+        return ""
 
 
 class HuggingFaceProvider:

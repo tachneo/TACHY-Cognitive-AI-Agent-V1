@@ -100,5 +100,7 @@
 "What are the core stages of a typical business workflow lifecycle, and how do they differ across industries like SaaS vs manufacturing?": "2026-07-07",
 "What are the architectural differences between extending a local cognitive AI's reasoning versus integrating an external LLM API like Claude Opus?": "2026-07-07",
 "How do researchers incorporate play-like exploration in reinforcement learning agents?": "2026-07-07",
-"How do researchers schedule or gate exploration phases in continual-learning agents so they don't catastrophically forget while still discovering new behaviors?": "2026-07-07"
+"How do researchers schedule or gate exploration phases in continual-learning agents so they don't catastrophically forget while still discovering new behaviors?": "2026-07-07",
+"github.com/tachneo/TACHY-Cognitive-AI-Agent-V1": "2026-07-07",
+"TACHY-Cognitive-AI-Agent-V1 tachneo": "2026-07-07"
 }
