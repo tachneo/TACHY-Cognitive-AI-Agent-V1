@@ -132,10 +132,17 @@ def poll_conversation_once(conversation_id: int, *, dry_run: bool = True,
 
 def _poll_once_unlocked(*, dry_run: bool, conversation_limit: int,
                         message_limit: int) -> dict:
+    from app.config import get_settings
     conversations = tody_agent.inbox(limit=conversation_limit)
     convs = _conversation_items(conversations)
     if not convs:
         return {"processed": False, "reason": "no conversations found", "dry_run": dry_run}
+
+    # Autonomous social mode: reply to EVERY conversation with pending messages
+    # in one pass (so many people can chat with Shree at once). Otherwise keep
+    # the supervised default: process the first pending conversation only.
+    process_all = (not dry_run and get_settings().tody_autonomous_social)
+    handled: list[dict] = []
 
     for conv in convs:
         conversation_id = _conversation_id(conv)
@@ -157,14 +164,22 @@ def _poll_once_unlocked(*, dry_run: bool, conversation_limit: int,
             candidate["body"],
             sender=candidate.get("sender"),
             message_id=candidate.get("message_id"),
+            extra_message_ids=candidate.get("extra_message_ids"),
         )
         result["source_message"] = {
             "id": candidate.get("message_id"),
             "body": candidate.get("body"),
         }
         result["dry_run"] = False
-        return result
+        if not process_all:
+            return result
+        handled.append({"conversation_id": conversation_id,
+                        "sent": result.get("sent"),
+                        "throttled": result.get("throttled", False)})
 
+    if handled:
+        return {"processed": True, "dry_run": False, "autonomous_social": True,
+                "conversations_handled": len(handled), "results": handled}
     return {
         "processed": False,
         "dry_run": dry_run,

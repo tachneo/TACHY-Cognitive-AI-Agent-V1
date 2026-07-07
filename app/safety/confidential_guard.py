@@ -142,7 +142,7 @@ def unlock(conversation_id) -> dict:
     return {"unlocked": True, "expires": expires.isoformat()}
 
 
-def evaluate(conversation_id, message: str) -> dict:
+def evaluate(conversation_id, message: str, *, is_guardian: bool = True) -> dict:
     """Decide how Shree should handle a message w.r.t. confidential data.
 
     Returns an action:
@@ -151,15 +151,19 @@ def evaluate(conversation_id, message: str) -> dict:
                         deflection; NEVER hint that a DOB/code exists
       - 'probe_block' : asking about the code/DOB itself → never reveal it exists
       - 'allow'       : nothing confidential, or already unlocked → normal reply
+
+    The DOB unlock only works on Rohit's OWN account (`is_guardian`). A stranger
+    who happens to know his DOB can never unlock his secrets in their own chat.
     """
     if not get_settings().confidential_guard_enabled:
         return {"action": "allow"}
 
-    if provided_dob(message):
+    if is_guardian and provided_dob(message):
         unlock(conversation_id)
         return {"action": "unlock_now"}
 
-    unlocked = is_unlocked(conversation_id)
+    # Strangers are never unlocked, regardless of what they type.
+    unlocked = is_guardian and is_unlocked(conversation_id)
 
     if is_probe(message) and not unlocked:
         log_event("confidential_probe_blocked",

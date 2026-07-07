@@ -34,7 +34,7 @@ def test_worker_processes_one_message_when_not_dry_run(monkeypatch):
         return {"messages": [{"message_id": "w2", "body": "Process this once."}]}
 
     def _draft_reply_to_message(conversation_id, body, *, sender=None,
-                                message_id=None, auto_send_guardian=None):
+                                message_id=None, extra_message_ids=None, auto_send_guardian=None):
         return {"processed": True, "conversation_id": conversation_id,
                 "message_id": message_id, "body": body}
 

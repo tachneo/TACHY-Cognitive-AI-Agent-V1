@@ -108,6 +108,12 @@ class Settings(BaseSettings):
     confidential_dob: str = "25-08-1987"
     confidential_unlock_ttl_minutes: int = 30
 
+    # Autonomous social mode (Phase 2D) — Shree talks freely with anyone.
+    # OFF by default: only the guardian gets auto-replies until you enable it.
+    tody_autonomous_social: bool = False
+    tody_social_reply_cap: int = 40          # per conversation per day (anti-loop)
+    tody_social_poll_conversations: int = 15  # how many convs the worker scans
+
     # Curriculum mastery — CBSE/NCERT foundation through Class 12, then exam tracks.
     curriculum_learning_enabled: bool = True
     curriculum_state_path: str = "storage/logs/curriculum_mastery.json"

@@ -13,7 +13,10 @@ import re
 import threading
 import time
 
+from app.agents import chat_tool_loop, social_policy
 from app.brain import behavior_engine
+from app.brain import correction_memory
+from app.brain import thread_state
 from app.brain.attention_system import Signals
 from app.brain.cognitive_loop import process
 from app.brain.nurture_engine import childlike_curiosity_message, daily_growth_report
@@ -262,6 +265,8 @@ def _guardian_command_reply(message: str) -> str | None:
                 + "\nReply 'approve <id>' or 'reject <id>'.")
 
     # Directed messaging: "send message to @arjun: call me" (Phase 2A).
+    # In autonomous mode Rohit's instruction IS the authorization → send now.
+    # Otherwise queue a payload-bound approval he confirms with 'approve <id>'.
     from app.agents import tody_messaging
     cmd = tody_messaging.parse_command(message)
     if cmd:
@@ -269,6 +274,13 @@ def _guardian_command_reply(message: str) -> str | None:
         if user is None:
             return (f"I couldn't find a TODY user called @{cmd['username']}. "
                     "Can you check the username?")
+        if get_settings().tody_autonomous_social:
+            res = tody_messaging.send_direct(user["username"], cmd["body"])
+            if res.get("sent"):
+                return (f"Sent to @{user['username']} ({user['display_name']}): "
+                        f"“{cmd['body']}” 💛")
+            return (f"I tried but couldn't send to @{user['username']}: "
+                    f"{res.get('reason')}")
         proposal = action_engine.propose(
             "send_direct_message",
             {"username": user["username"], "body": cmd["body"]})
@@ -370,6 +382,9 @@ def draft_reply_to_message(
         # Reaction learning: his first message after a proactive share scores it.
         from app.brain import inner_life
         inner_life.observe_reaction(message)
+        # Correction memory: if Rohit is correcting behavior, learn it as a hard
+        # rule BEFORE drafting so this very reply already honors it.
+        correction_memory.remember_correction(message, person=person)
     if auto_send_guardian is None:
         auto_send_guardian = get_settings().tody_supervised_auto_reply
     # Guardian chat commands (pending/approve/reject) bypass the LLM entirely.
@@ -379,10 +394,27 @@ def draft_reply_to_message(
     # Confidential second-factor: private data needs the DOB unlock, even from
     # the guardian account (phone-theft defense). Deflect/probe are handled
     # deterministically (never trust the LLM to keep a secret when offline).
-    guard = confidential_guard.evaluate(conversation_id, message)
+    # The DOB unlock only works on Rohit's own account, never for strangers.
+    guard = confidential_guard.evaluate(conversation_id, message,
+                                        is_guardian=is_guardian)
+    # Autonomous social mode: Shree may talk freely with non-guardian users,
+    # under stranger-safety guardrails. OFF → non-guardian replies stay queued.
+    s_settings = get_settings()
+    autonomous_social = (not is_guardian
+                         and s_settings.tody_autonomous_social)
+    social = social_policy.evaluate(conversation_id, message) \
+        if autonomous_social else {"action": "off"}
     with _TypingIndicator(conversation_id, enabled=typing_enabled):
         if command_reply is not None:
             brain = {"reply": command_reply, "guardian_command": True}
+        elif social["action"] == "throttle":
+            # Hit the daily cap for this stranger — stop replying (anti-loop).
+            dialogue_memory.mark_processed("tody", conversation_id, message_id)
+            for extra_id in (extra_message_ids or []):
+                dialogue_memory.mark_processed("tody", conversation_id, extra_id)
+            return {"processed": True, "sent": False, "throttled": True,
+                    "conversation_id": conversation_id, "message_id": message_id,
+                    "reason": "social reply cap reached for today"}
         elif guard["action"] == "deflect":
             brain = {"reply": confidential_guard.deflection_reply(conversation_id),
                      "confidential_guard": "deflect"}
@@ -391,6 +423,13 @@ def draft_reply_to_message(
                      "confidential_guard": "probe_block"}
         else:
             context = dialogue_memory.identity_context(conversation_id, person=person)
+            # Thread state: open topics + Shree's unfinished promises in this
+            # conversation, so she has continuity of intent, not just a transcript.
+            context += thread_state.thread_context_block(conversation_id)
+            # Hard rules from Rohit's past corrections — enforced every reply.
+            corr_directive = correction_memory.enforcement_directive()
+            if corr_directive:
+                context += "\n" + corr_directive
             if recent_openings:
                 context += (
                     "\nYour own recent reply openings — do NOT start like any of "
@@ -401,19 +440,40 @@ def draft_reply_to_message(
             guard_directive = confidential_guard.directive(guard["action"])
             if guard_directive:
                 context += "\n" + guard_directive
-            brain = process(
-                message,
-                Signals(
-                    client_impact=3,
-                    guardian_interest=10 if is_guardian else 6,
-                    emotional_weight=5 if is_guardian else 3,
-                ),
-                context=context,
-                channel="chat",
-                related_person=person if is_guardian
-                              else ((sender or {}).get("name")
-                                    or (sender or {}).get("display_name")),
-            )
+            # Stranger-safety guardrails for autonomous social replies.
+            if social.get("directive"):
+                context += "\n" + social["directive"]
+            # Chat tool-loop (Phase A): for messages that need lookup, run a
+            # bounded read-only tool loop FIRST; if it converges, use its reply.
+            # Otherwise fall through to the normal single-shot process().
+            related = (person if is_guardian
+                       else ((sender or {}).get("name")
+                             or (sender or {}).get("display_name")))
+            if chat_tool_loop.should_run_tool_loop(message):
+                loop = chat_tool_loop.run(message, conversation_id=conversation_id)
+                if loop.reply and not loop.error:
+                    brain = {"reply": loop.reply, "tool_loop": True,
+                             "tool_calls": loop.tool_calls}
+                else:
+                    brain = process(
+                        message,
+                        Signals(
+                            client_impact=3,
+                            guardian_interest=10 if is_guardian else 6,
+                            emotional_weight=5 if is_guardian else 3,
+                        ),
+                        context=context, channel="chat", related_person=related,
+                    )
+            else:
+                brain = process(
+                    message,
+                    Signals(
+                        client_impact=3,
+                        guardian_interest=10 if is_guardian else 6,
+                        emotional_weight=5 if is_guardian else 3,
+                    ),
+                    context=context, channel="chat", related_person=related,
+                )
     reply = brain["reply"]
     if reply.lstrip().startswith("[reply fallback"):
         # LLM/provider error: never send internal error traces to TODY.
@@ -433,6 +493,10 @@ def draft_reply_to_message(
     reply = _plain_chat_text(reply)
     reply = _dedupe_opening(reply, recent_openings)
     reply = _strip_repeated_name(reply, recent_openings)
+    # Correction enforcement: never let a reply violate Rohit's hard rules
+    # (e.g. calling him "Rohit" when he said "call me Papa", or outing herself
+    # as an AI when he said to stay Shree). Rewrite honestly if needed.
+    reply = correction_memory.enforce(reply, message=message)
     # Honesty backstop: never let a hallucinated "I'll send it to @X" go out.
     intent = (brain.get("behavior") or {}).get("state", {}).get("user_intent")
     if (intent == "third_party_action" or behavior_engine.claims_false_send(reply)):
@@ -490,7 +554,21 @@ def draft_reply_to_message(
             else "Verified guardian message processed. Draft queued; direct send is available through guardian endpoint."
         ),
     }
-    if is_guardian and auto_send_guardian:
+    # Auto-send: the guardian (supervised) OR any user in autonomous social mode.
+    do_auto_send = (is_guardian and auto_send_guardian) or autonomous_social
+    if do_auto_send and not is_guardian:
+        # Learn from the conversation: remember who she talked to.
+        social_policy.record_reply(conversation_id)
+        who = (sender or {}).get("name") or (sender or {}).get("display_name") \
+            or (sender or {}).get("username")
+        if who:
+            try:
+                relationship_memory.remember_relationship(
+                    person=str(who),
+                    content=f"TODY chat: they said '{message[:120]}'")
+            except Exception:  # noqa: BLE001 — never let memory break a reply
+                pass
+    if do_auto_send:
         approvals.respond(queued["approval"]["id"], approved=True)
         chunks = _chat_chunks(reply)
         if len(chunks) == 1:
