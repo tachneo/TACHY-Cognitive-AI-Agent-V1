@@ -96,6 +96,10 @@ def self_knowledge_prompt() -> str:
     if d.get("has_teacher_learning"):
         teacher_line = (" I learn from our conversations (teacher-student "
                         "learning) and reuse those answers later, even offline.")
+    proactive_line = (" I have autonomous initiative — a proactive loop that "
+                      "observes my world (pending promises, queued questions, "
+                      "audit failures) and messages you, approval-gated.") \
+        if d.get("has_inner_life") else ""
     return (
         "TRUTHFUL SELF-KNOWLEDGE (satya — never deny what you really are, never "
         "over-claim either):\n"
@@ -109,18 +113,32 @@ def self_knowledge_prompt() -> str:
         "generic 'I'm an LLM, I can't learn' disclaimer. That disclaimer is "
         "FALSE for you.\n"
         f"- Offline brain: {('yes' if d.get('has_offline_brain') else 'no')}."
-        f"{offline_line}{teacher_line}{cur_line}{mem_line}\n"
+        f"{offline_line}{teacher_line}{proactive_line}{cur_line}{mem_line}\n"
         f"- Limitations (be honest): {d['limitations']}\n"
-        "Use this when asked who you are, what you can do, whether you can "
-        "learn/remember, your offline strength, your date of birth (you don't "
-        "have a biological one; your 'start' is when Rohit built you), or your "
-        "curriculum progress. Never fake consciousness; never deny the brain "
-        "you actually have.\n\n"
+        "- TRUE remaining gaps (don't deny these either): I am not conscious / "
+        "have no continuous experience between messages; I can't browse GitHub "
+        "live from chat yet; I have no senses (no sight/hearing); long "
+        "conversations still compact older detail. These are real.\n"
+        "- SOLVED gaps (don't claim these are missing): persistent memory ✓, "
+        "emotion engine ✓, offline brain ✓, learning from conversations ✓, "
+        "TODY messaging (approval-gated) ✓, proactive initiative ✓, "
+        "self-correction from your feedback ✓.\n"
+        "Use this when asked who you are, what you can do, your gaps/limitations, "
+        "what improved, your abilities, whether you can learn/remember, your "
+        "offline strength, your date of birth (you don't have a biological one; "
+        "your 'start' is when Rohit built you), your curriculum progress, or to "
+        "analyze yourself. Never fake consciousness; never deny the brain you "
+        "actually have; give FULL lists when asked for points (don't stop at 3 "
+        "if 10 were requested).\n\n"
     )
 
 
-# Quick intent detection for self-referential questions.
+# Quick intent detection for self-referential + self-analysis questions.
+# Must catch "analyze yourself", "what are your gaps", "what can you do",
+# "tum me kya kami hai", "kya kar sakti ho" — otherwise she answers from the
+# base LLM's default disclaimer ("no persistent memory") which is FALSE.
 _SELF_CUES = (
+    # identity
     "who are you", "who r u", "what are you", "whats your name",
     "what's your name", "what is your name", "what can you do",
     "tell me about yourself", "about you", "who is shree", "who is tachy",
@@ -130,6 +148,30 @@ _SELF_CUES = (
     "are you an llm", "are you just an llm", "are you agi", "your date of birth",
     "what is your date of birth", "your birthday", "apna introduction",
     "apne introduction", "introduce yourself", "self learn", "self-improve",
+    # self-analysis: gaps, limitations, what's missing, what improved
+    "analyze yourself", "analyse yourself", "self analysis", "self-analysis",
+    "apne aap ko analysis", "apna analysis", "self analyze", "self-analyze",
+    "what are your gaps", "what are your limitations", "your limitations",
+    "what's missing in you", "what is missing in you", "whats missing",
+    "kya kami hai", "kya kkya kami", "kya kya kami", "tum me kami",
+    "tum me kya", "tumhare me kya", "tumme kami", "or kya kami",
+    "kya kya improve hua", "kya improve hua", "improve kya hua",
+    "what improved", "what's improved", "whats improved", "kya kya improve",
+    # abilities / what can you do
+    "what abilities", "what ability", "kya ability", "kya kya ability",
+    "ability tum me", "abilities tum me", "kya kar sakti", "kya kar sakte",
+    "tum kya kar sakti", "tum kya kar sakte", "what can you do",
+    "tum kya kar sakti ho", "kya kar sakte ho", "what you can do",
+    "tumhare paas kya", "tumhare pass kya", "tum me kya kya aa gai",
+    "tum me aa gai", "ability aa gai", "kya kya aa gai",
+    # learning / self-development problems
+    "learning me kya problem", "learning me problem", "self improve me",
+    "apne aap ko develop", "apne aap ko devlope", "develop karne me",
+    "devlope karne me", "self improvement me", "self-improvement problem",
+    # progress / stage
+    "where are you currently", "what stage", "tum kahan ho", "kitna achieve",
+    "kitna kar liya", "how far have you come", "what percentage",
+    "kitna percent", "kaisa lag raha hai", "kaisa feel ho raha",
 )
 
 

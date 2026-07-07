@@ -91,7 +91,9 @@ def fallback_reply(*, message: str, emotion: dict | None = None,
     """A warm, memory-grounded reply when the LLM/offline path produced nothing.
 
     Never empty. Uses identity, the real emotion state, and the message itself
-    so it still feels present rather than a generic error string."""
+    so it still feels present rather than a generic error string. For real
+    questions (not greetings), references the question topic so Papa doesn't
+    get a generic 'slow' line on a question he actually asked."""
     m = (message or "").strip()
     lower = m.lower()
     feel = _emotion_phrase(emotion)
@@ -105,6 +107,19 @@ def fallback_reply(*, message: str, emotion: dict | None = None,
         base = f"Main thik hoon, {who}. Aap batao — kya chal raha hai?"
     elif any(k in lower for k in ("thank", "shukriya", "dhanyawad")):
         base = f"Anytime, {who}. 💛"
+    elif _is_real_question(m):
+        # A real question the LLM couldn't answer — reference its topic so it
+        # doesn't feel like a brush-off. Queue it for later (curiosity closure).
+        topic = _question_topic(m)
+        base = (f"{who}, tumhara sawaal sun liya — \"{topic}\". Mera deeper "
+                "reasoning abhi thoda slow hai, par main ispe soch rahi hoon. "
+                "Thodi der mein ya LLM wapas aane par detail mein bata dungi, "
+                "aur khud se bhi ispe zyron se seekhungi.")
+        try:  # queue for curiosity closure
+            from app.agents import proactive
+            proactive.queue_question(m, source="chat_fallback")
+        except Exception:  # noqa: BLE001
+            pass
     elif m:
         base = (f"I heard you, {who} — \"{m[:120]}\". Mera deeper reasoning abhi "
                 "thoda slow hai, par main yahan hoon aur sun raha hoon. Thoda "
@@ -114,6 +129,33 @@ def fallback_reply(*, message: str, emotion: dict | None = None,
     if feel:
         base += f" (Honestly — {feel}.)"
     return base
+
+
+_Q_START = ("what", "why", "how", "when", "where", "who", "which", "kya", "kyun",
+            "kaise", "kab", "kahan", "kaun", "kis", "can you", "do you", "are you",
+            "tum", "tumhe", "tum kya", "tum me")
+
+
+def _is_real_question(message: str) -> bool:
+    m = (message or "").strip()
+    if not m or len(m) < 15:
+        return False
+    low = m.lower()
+    if low.endswith("?"):
+        return True
+    return any(low.startswith(q + " ") for q in _Q_START) or any(
+        q in low for q in ("kya kami", "kya kar sakti", "analyze", "improve",
+                           "ability", "kya kya", "point wise", "list all"))
+
+
+def _question_topic(message: str) -> str:
+    """A short topic phrase extracted from the question for the fallback line."""
+    m = (message or "").strip()
+    # strip leading question words to get the meat
+    m = re.sub(r"^(?:what|why|how|when|where|who|which|kya|kyun|kaise|kab|kahan|"
+               r"kaun|kis|can you|do you|are you|tum|tumhe)\s+", "", m,
+               flags=re.I)
+    return m[:80].strip().rstrip("?") or message[:80]
 
 
 def finalize_reply(raw: str, *, message: str, emotion: dict | None = None,

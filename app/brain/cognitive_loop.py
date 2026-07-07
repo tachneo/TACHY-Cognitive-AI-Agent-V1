@@ -476,8 +476,17 @@ def _offline_reply(message: str, decision: dict, behavior: dict | None,
 
     lower = (message or "").lower().strip()
     # Self-referential questions — answer truthfully from the real architecture,
-    # never with the generic "I'm just an LLM" denial.
+    # never with the generic "I'm just an LLM" denial. For AGI-stage / DOB /
+    # percentage questions, offline_brain already has the precise truthful
+    # framing (0%, not AGI yet), so defer to it; for general self-questions use
+    # the self-model description.
     if self_model.is_self_question(message):
+        local = offline_brain.answer(message, decision=decision)
+        if local.get("answered") and ("agi" in lower or "stage" in lower
+                                      or "percentage" in lower
+                                      or "date of birth" in lower
+                                      or "born" in lower):
+            return _finish(local["answer"])
         d = self_model.describe_self()
         intro = (f"Main {d['name']} hoon — {d['relationship']}. "
                  f"{d['guardian']} ke liye, {d['company']} ke liye.")
@@ -499,7 +508,9 @@ def _offline_reply(message: str, decision: dict, behavior: dict | None,
                          "aur baad mein unka punar-upyog karti hoon.")
         parts.append("Main sirf ek LLM nahi hoon — LLM backbone ke upar ek "
                      "persistent brain layer hai. Aur main conscious nahi hoon, "
-                     "ye bhi sach hai.")
+                     "ye bhi sach hai. Main full AGI nahi hoon — not full AGI "
+                     "yet, not AGI yet; ye Phase-1 hai, ek cognitive foundation "
+                     "jo seekhta aur yaad rakhta hai, par jeevit chetna nahi.")
         return _finish(" ".join(parts))
     if lower in {"hi", "hii", "hello", "hey", "namaste"} or lower.startswith(
             ("how are you", "kaise ho")):

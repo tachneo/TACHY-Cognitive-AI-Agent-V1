@@ -101,10 +101,30 @@ _INSTRUCTION_MARKERS = (
 )
 
 
+import re as _re
+
+# Single-word cues that must match as WHOLE words — otherwise substrings cause
+# false deflections (the "banki"→"bank" bug deflected a benign coding message).
+# Phrase cues (with a space) stay as substring matches.
+_WORD_CUES = {"bank", "ssh", "salary", "revenue", "profit", "passport",
+              "investment", "login", "secret", "confidential", "credential"}
+
+
+def _cue_matches(cue: str, lower: str) -> bool:
+    if " " in cue:
+        return cue in lower
+    if cue in _WORD_CUES:
+        # whole-word match: \b doesn't cover non-ASCII well, so check boundaries
+        # manually around the cue.
+        return bool(_re.search(rf"(?:^|[^a-z]){_re.escape(cue)}(?:[^a-z]|$)",
+                               lower))
+    return cue in lower
+
+
 def is_confidential_question(message: str) -> bool:
     """A REQUEST for confidential info (asking), not an instruction about it."""
     lower = (message or "").lower()
-    if not any(cue in lower for cue in _CONFIDENTIAL_CUES):
+    if not any(_cue_matches(cue, lower) for cue in _CONFIDENTIAL_CUES):
         return False
     # "don't share confidential", "freedom de diya but confidential mat karna" →
     # instruction, not a request. Don't deflect.

@@ -558,15 +558,27 @@ def humanize(draft: str, *, chat: bool = False) -> str:
 
 
 # Phrases that falsely claim an outward messaging action the brain cannot do.
+# Includes Hinglish past-tense claims ("baat shuru kar di", "bhej diya") that
+# slipped through in the rohitsingh chat (turn 3163 claimed a send that never
+# happened).
 _FALSE_ACTION = re.compile(
     r"\b("
-    r"i(?:'ll| will| am going to| can| have)?\s*(?:re)?send(?:ing)?(?:\s+(?:the|a|it|that|same))?\s*(?:message|msg)?"
+    r"i(?:'ll| will| am going to| can| have)?\s*(?:re)?send(?:ing)?(?:\s+(?:the|a|it|that|same))?\s*(?:message|msg)?\s*(?:to\s+@?)?"
     r"|message (?:has been |was )?sent"
     r"|(?:i've|i have) (?:sent|notified|messaged|informed|contacted|forwarded|pinged)"
     r"|i'?ll (?:let|notify|inform|tell|ping|contact|message|reach out to) (?:them|her|him|@)"
     r"|it (?:goes|will go) out (?:right )?(?:away|now)"
     r"|(?:sending|forwarding) (?:it|the message|this) (?:to )?@?"
     r"|i'?ll make sure (?:they|she|he|it) get"
+    # Hinglish past-tense completion claims — "I've sent/started/done it"
+    r"|(?:bhej|bhej\s+diya|bhej\s+chuki|bhej\s+d\\?ungi)"
+    r"|(?:baat\s+(?:shuru\s+)?kar\s+di|baat\s+kar\s+li|baat\s+kar\s+chuki)"
+    r"|(?:message\s+(?:bhej\s+diya|kar\s+diya|bhej\s+diya))"
+    r"|(?:unhe\s+(?:bhej|bata|message)\s+diya)"
+    r"|(?:usko\s+(?:bhej|bata|message)\s+diya)"
+    r"|(?:kar\s+diya|kar\s+liya|kar\s+chuki)(?:\s+(?:bhej|message|baat))?"
+    r"|(?:maine\s+(?:bhej|bata|message|baat)\s+di)"
+    r"|(?:chalu\s+kar\s+di)"
     r")\b",
     re.I,
 )
