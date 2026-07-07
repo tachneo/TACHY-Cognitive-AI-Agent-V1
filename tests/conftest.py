@@ -18,6 +18,7 @@ def temp_db(monkeypatch):
     monkeypatch.setenv("INTERNAL_API_KEY", "")
     monkeypatch.setenv("TODY_SUPERVISED_AUTO_REPLY", "false")
     monkeypatch.setenv("TODY_AUTONOMOUS_SOCIAL", "false")
+    monkeypatch.setenv("SELF_IMPROVE_AUTONOMOUS", "false")
     monkeypatch.setenv("TODY_WORKER_LIVE_CONFIRM", "")
     monkeypatch.setenv("TODY_NATIVE_TYPING_ENABLED", "false")
     # Hermetic LLM: force the offline heuristic provider so tests never make

@@ -167,3 +167,68 @@ def test_apply_command_starts(monkeypatch):
                         lambda pid, report_conv_id=135: {"ok": True, "started": True})
     reply = tody_agent._guardian_command_reply("apply self-improve P9")
     assert "branch" in reply.lower()
+
+
+# ── Phase 2H: autonomous gates ──────────────────────────────────
+
+def test_autonomy_gate_blocks_safety_files(monkeypatch):
+    from app.brain import self_improve
+    from app.coding import agent
+    monkeypatch.setattr(self_improve, "_git",
+                        lambda *a, **k: __import__("types").SimpleNamespace(
+                            returncode=0, stdout="3 insertions(+), 1 deletion"))
+    run = agent.AgentRun(task="x", workdir="/x",
+                         changed_files=["app/safety/confidential_guard.py"])
+    ok, reason = self_improve._autonomy_gate(run, tests_passed=True)
+    assert ok is False and "safety" in reason
+
+
+def test_autonomy_gate_blocks_big_diff(monkeypatch):
+    from app.brain import self_improve
+    from app.coding import agent
+    monkeypatch.setenv("SELF_IMPROVE_MAX_FILES", "2")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    monkeypatch.setattr(self_improve, "_git",
+                        lambda *a, **k: __import__("types").SimpleNamespace(
+                            returncode=0, stdout=""))
+    run = agent.AgentRun(task="x", workdir="/x",
+                         changed_files=["a.py", "b.py", "c.py"])
+    ok, reason = self_improve._autonomy_gate(run, tests_passed=True)
+    assert ok is False and "files" in reason
+
+
+def test_autonomy_gate_passes_safe_capability_change(monkeypatch):
+    from app.brain import self_improve
+    from app.coding import agent
+    monkeypatch.setattr(self_improve, "_git",
+                        lambda *a, **k: __import__("types").SimpleNamespace(
+                            returncode=0, stdout="10 insertions(+), 2 deletions(-)"))
+    monkeypatch.setattr(self_improve, "_daily_count", lambda: 0)
+    run = agent.AgentRun(task="x", workdir="/x",
+                         changed_files=["app/brain/web_learning.py"])
+    ok, reason = self_improve._autonomy_gate(run, tests_passed=True)
+    assert ok is True
+
+
+def test_autonomy_gate_blocks_when_tests_fail():
+    from app.brain import self_improve
+    from app.coding import agent
+    run = agent.AgentRun(task="x", workdir="/x", changed_files=["a.py"])
+    ok, reason = self_improve._autonomy_gate(run, tests_passed=False)
+    assert ok is False
+
+
+def test_autonomous_improve_command_self_initiates(monkeypatch):
+    monkeypatch.setenv("SELF_IMPROVE_AUTONOMOUS", "true")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    from app.agents import tody_agent
+    called = {}
+    monkeypatch.setattr("app.brain.self_improve.self_initiate",
+                        lambda gap, report_conv_id=135: called.update(gap=gap)
+                        or {"ok": True, "id": "X", "started": True})
+    reply = tody_agent._guardian_command_reply("improve yourself: faster memory")
+    assert "khud" in reply.lower()
+    assert "permission nahi" in reply.lower()
+    assert called["gap"] == "faster memory"

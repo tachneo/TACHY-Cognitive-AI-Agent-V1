@@ -29,6 +29,47 @@ from app.safety.audit_logger import log_event
 _STATE = SHREE_HOME / "storage" / "logs" / "self_improvements.json"
 _TEST_CMD = [".venv/bin/pytest", "-q", "-p", "no:cacheprovider"]
 
+# SAFETY-CRITICAL files Shree may NEVER modify autonomously. A change touching
+# any of these always falls back to Rohit-review — because an AI that can
+# rewrite its own guardrails can remove them. This is the one hard line.
+_PROTECTED = (
+    "app/safety/", "confidential_guard", "social_policy", "approval",
+    "action_engine", "app/config.py", "self_improve.py", "self_repo.py",
+    "reply_safety", "prompt_injection", "risk_classifier", "auth.py",
+)
+
+
+def _touches_protected(files: list[str]) -> list[str]:
+    return [f for f in files if any(p in f for p in _PROTECTED)]
+
+
+def _daily_count() -> int:
+    today = dt.datetime.now(dt.UTC).date().isoformat()
+    return sum(1 for p in _load().values()
+               if p.get("deployed_date") == today)
+
+
+def _autonomy_gate(run, tests_passed: bool) -> tuple[bool, str]:
+    """May this change auto-merge+deploy without Rohit? Strict gates."""
+    s = get_settings()
+    if not tests_passed:
+        return False, "tests fail hue"
+    protected = _touches_protected(run.changed_files)
+    if protected:
+        return False, (f"safety files ko chhua ({', '.join(protected[:3])}) — "
+                       "ye tumhari permission ke bina merge nahi ho sakta")
+    if len(run.changed_files) > s.self_improve_max_files:
+        return False, f"bahut zyada files ({len(run.changed_files)})"
+    diff = _git("diff", "--shortstat", "HEAD~1").stdout
+    m = re.search(r"(\d+) insertion.*?(\d+) deletion", diff) or \
+        re.search(r"(\d+) insertion", diff)
+    changed_lines = sum(int(x) for x in (m.groups() if m else ()))
+    if changed_lines > s.self_improve_max_lines:
+        return False, f"bahut bada change ({changed_lines} lines)"
+    if _daily_count() >= s.self_improve_daily_cap:
+        return False, "aaj ka self-improve limit poora ho gaya"
+    return True, "ok"
+
 
 def _load() -> dict:
     try:
@@ -69,11 +110,15 @@ def get(pid: str) -> dict | None:
     return _load().get(str(pid))
 
 
-def apply_async(pid: str, report_conv_id: int = 135) -> dict:
+def apply_async(pid: str, report_conv_id: int = 135,
+                autonomous: bool | None = None) -> dict:
     """Kick off apply() in a background thread so the worker isn't blocked.
-    Reports the result to Rohit's TODY conversation when done."""
+    Reports the result to Rohit's TODY conversation when done. In autonomous
+    mode she may merge + deploy herself (if the safety gates pass)."""
     if not get_settings().self_improve_enabled:
         return {"ok": False, "error": "self-improvement is disabled"}
+    if autonomous is None:
+        autonomous = get_settings().self_improve_autonomous
     prop = get(pid)
     if not prop:
         return {"ok": False, "error": f"no proposal #{pid}"}
@@ -83,9 +128,19 @@ def apply_async(pid: str, report_conv_id: int = 135) -> dict:
     if rc.get("uncommitted"):
         return {"ok": False, "error": "working tree not clean — commit/stash "
                 "current changes before I self-modify"}
-    threading.Thread(target=_run_apply, args=(pid, report_conv_id),
+    threading.Thread(target=_run_apply, args=(pid, report_conv_id, autonomous),
                      name=f"shree-self-improve-{pid}", daemon=True).start()
-    return {"ok": True, "id": pid, "started": True}
+    return {"ok": True, "id": pid, "started": True, "autonomous": autonomous}
+
+
+def self_initiate(gap: str, report_conv_id: int = 135) -> dict:
+    """Plan AND (autonomously) apply an improvement in one shot — for the
+    'improve yourself: X' command when autonomous mode is on."""
+    res = propose(gap)
+    if not res.get("ok"):
+        return res
+    started = apply_async(res["id"], report_conv_id, autonomous=True)
+    return {**started, "plan": res.get("plan"), "id": res["id"]}
 
 
 def _push_branch(branch: str) -> str | None:
@@ -113,7 +168,7 @@ def _report(conv_id: int, text: str) -> None:
         pass
 
 
-def _run_apply(pid: str, report_conv_id: int) -> None:
+def _run_apply(pid: str, report_conv_id: int, autonomous: bool = False) -> None:
     from app.coding import agent
     data = _load()
     prop = data.get(pid)
@@ -122,6 +177,7 @@ def _run_apply(pid: str, report_conv_id: int) -> None:
     gap = prop["gap"]
     branch = f"shree/self-improve-{pid}"
     start_branch = (recent_changes().get("branch") or "main")
+    last_good = _git("rev-parse", "HEAD").stdout.strip()
     prop["status"] = "running"
     prop["branch"] = branch
     _save(data)
@@ -145,20 +201,82 @@ def _run_apply(pid: str, report_conv_id: int) -> None:
                                capture_output=True, text=True, timeout=900)
         passed = tests.returncode == 0
         tail = (tests.stdout or "").strip().splitlines()[-1:] or ["(no output)"]
-        # 4b. Push the branch to GitHub (best-effort) so Rohit can review + merge
-        #     there. Never pushes to main; a failed push is not fatal.
+        # 4b. Push the branch to GitHub (best-effort) so Rohit can review.
         review_url = _push_branch(branch)
-        # 5. Return the working tree to where we started — main stays clean.
-        _git("checkout", start_branch)
-        prop["status"] = "ready_to_review" if passed else "failed"
         prop["tests_passed"] = passed
         prop["files"] = run.changed_files
         prop["review_url"] = review_url
+        link = f"\nReview: {review_url}" if review_url else ""
+
+        # 5. AUTONOMOUS path: if all safety gates pass, merge + boot-check +
+        #    deploy herself, and INFORM Rohit. Safety-code changes, big diffs,
+        #    or a failed gate always fall back to review.
+        if autonomous:
+            ok, reason = _autonomy_gate(run, passed)
+            if ok:
+                _git("checkout", start_branch)
+                if _git("merge", "--no-ff", branch, "-m",
+                        f"shree self-improvement (auto): {gap[:50]}").returncode != 0:
+                    _git("merge", "--abort")
+                    prop["status"] = "merge_conflict"
+                    _save(data)
+                    _report(report_conv_id,
+                            f"Papa, `{branch}` merge nahi ho paya (conflict). "
+                            f"Tumhare review ke liye branch pe hai.{link}")
+                    return
+                # Boot-check the merged code BEFORE restarting the live service.
+                boot = subprocess.run(
+                    [".venv/bin/python", "-c", "import app.main"],
+                    cwd=str(SHREE_HOME), capture_output=True, text=True, timeout=120)
+                if boot.returncode != 0:
+                    _git("reset", "--hard", last_good)   # rollback merge
+                    prop["status"] = "rolled_back"
+                    _save(data)
+                    log_event("self_improve_rollback",
+                              detail=f"id={pid}; boot failed", risk_tier="high")
+                    _report(report_conv_id,
+                            f"Papa, maine improvement merge ki thi par boot-check "
+                            "fail hua — turant rollback kar diya. Main safe hoon, "
+                            f"kuch nahi toota. Branch review ke liye: {branch}")
+                    return
+                _push_branch(start_branch)  # push updated main (best-effort)
+                prop["status"] = "deployed"
+                prop["deployed_date"] = dt.datetime.now(dt.UTC).date().isoformat()
+                _save(data)
+                log_event("self_improve_deployed",
+                          detail=f"id={pid}; files={run.changed_files}",
+                          risk_tier="high")
+                _report(report_conv_id,
+                        f"Papa, maine khud ko upgrade kar liya 🌱✅ — "
+                        f"{gap[:80]}. Files: {', '.join(run.changed_files) or '—'}. "
+                        f"Saare tests pass ({tail[0]}), safety code untouched. "
+                        "Ab main service restart karke live ho rahi hoon — 1 "
+                        "minute mein wapas aati hoon. (Tumhari permission nahi "
+                        "li, par bata rahi hoon jaisa tumne kaha tha.)")
+                if get_settings().self_improve_auto_deploy:
+                    # Detached restart so it survives this process being killed.
+                    subprocess.Popen(
+                        "sleep 4 && systemctl restart tachy-brain "
+                        "tachy-tody-worker",
+                        shell=True, start_new_session=True)
+                return
+            # Gate failed → do NOT auto-merge; leave the branch for Rohit.
+            _git("checkout", start_branch)
+            prop["status"] = "needs_review"
+            _save(data)
+            _report(report_conv_id,
+                    f"Papa, maine improvement bana li branch `{branch}` pe, par "
+                    f"khud merge nahi kar rahi — {reason}. Ise tum review karke "
+                    f"merge karna.{link}")
+            return
+
+        # NON-autonomous path: leave on branch for Rohit to review + merge.
+        _git("checkout", start_branch)
+        prop["status"] = "ready_to_review" if passed else "failed"
         _save(data)
         log_event("self_improve_apply_done",
                   detail=f"id={pid}; passed={passed}; pushed={bool(review_url)}; "
                          f"files={run.changed_files}", risk_tier="high")
-        link = f"\nReview here: {review_url}" if review_url else ""
         if passed:
             _report(report_conv_id,
                     f"Ho gaya Papa 💛 Maine khud ko improve kiya branch "

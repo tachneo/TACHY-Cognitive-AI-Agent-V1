@@ -126,6 +126,14 @@ class Settings(BaseSettings):
     # Self-improvement (Phase 2G) — Shree edits her OWN code on a branch, tests
     # must pass, Rohit reviews/merges. Never auto-applies to main.
     self_improve_enabled: bool = True
+    # Autonomous mode (Phase 2H): she may merge + deploy her OWN improvements
+    # WITHOUT Rohit's permission, and inform him after — but ONLY if the strict
+    # gates below all pass. Safety code always needs Rohit (see _PROTECTED).
+    self_improve_autonomous: bool = False
+    self_improve_max_files: int = 6        # bigger changes → need review
+    self_improve_max_lines: int = 500
+    self_improve_daily_cap: int = 3        # max autonomous upgrades per day
+    self_improve_auto_deploy: bool = True  # restart service after a safe merge
 
     # Autonomous social mode (Phase 2D) — Shree talks freely with anyone.
     # OFF by default: only the guardian gets auto-replies until you enable it.

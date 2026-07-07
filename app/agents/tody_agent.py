@@ -296,12 +296,24 @@ def _guardian_command_reply(message: str) -> str | None:
                 "report karungi. Thoda time lagega — main main branch safe "
                 "rakhungi.")
 
-    # Self-improvement: "improve yourself: <gap>" → plan it, then Rohit approves.
+    # Self-improvement: "improve yourself: <gap>".
     sim = _SELF_IMPROVE_CMD.search(message or "")
     if sim:
         gap = (sim.group(3) or "").strip(" :,-\n") or \
             "look at your own recent gaps and pick the most valuable fix"
         from app.brain import self_improve
+        # Autonomous mode: she plans + applies + deploys herself, informs after.
+        if get_settings().self_improve_autonomous:
+            res = self_improve.self_initiate(gap, report_conv_id=135)
+            if not res.get("ok"):
+                return f"Abhi shuru nahi kar payi: {res.get('error')}"
+            return ("Theek hai Papa, main khud is par kaam kar rahi hoon 🌱 — "
+                    "plan bana ke, alag branch pe code likhke, poore tests "
+                    "chala ke. Agar sab safe raha to khud merge karke live ho "
+                    "jaungi aur tumhe bata dungi (permission nahi le rahi, par "
+                    "inform zaroor karungi). Safety-related code ko haath "
+                    "lagana pade to tumse poochungi.")
+        # Supervised mode: propose a plan, Rohit approves with 'apply self-improve'.
         res = self_improve.propose(gap)
         if not res.get("ok"):
             return f"Abhi plan nahi bana payi: {res.get('error')}"
