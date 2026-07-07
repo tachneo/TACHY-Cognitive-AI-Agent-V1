@@ -426,22 +426,36 @@ def _draft_reply(message: str, band: str, decision: dict,
     # Don't cache time-sensitive or one-off answers — they must not be replayed.
     cacheable = intent not in {"realtime_lookup", "datetime", "third_party_action"}
 
-    provider = _reply_provider()
-    if getattr(provider, "name", "llm") != "heuristic":  # a real LLM ("teacher")
+    # Provider fallback CHAIN: primary chat model (Claude) → default provider
+    # (NVIDIA) → offline. So a Claude 429/timeout never drops her to the dumb
+    # offline reply while a real backup model is available.
+    chain = []
+    primary = _reply_provider()
+    if getattr(primary, "name", "llm") != "heuristic":
+        chain.append(primary)
+    backup = get_provider()
+    if getattr(backup, "name", "llm") != "heuristic" \
+            and getattr(backup, "name", "") != getattr(primary, "name", ""):
+        chain.append(backup)
+    for i, prov in enumerate(chain):
         try:
-            reply = provider.complete(system, prompt, max_tokens=max_tokens)
-            if behavior and behavior.get("enabled"):
-                reply = behavior_engine.humanize(reply, chat=(channel == "chat"))
-            reply = reply_safety.finalize_reply(
-                reply, message=message, emotion=emotion,
-                person=related_person if related_person else None)
-            if cacheable and reply and not reply.startswith("[reply fallback"):
-                teacher_learning.remember_exchange(message=message, reply=reply)
-            return reply
-        except Exception:  # LLM down (credits/401/network) → fall through offline
-            pass
+            reply = prov.complete(system, prompt, max_tokens=max_tokens)
+        except Exception:  # this model is down (429/timeout) → try the next
+            continue
+        # An empty reply: try the next real model if there is one; otherwise let
+        # the safety finalizer turn it into a warm line (never the dumb offline).
+        if not (reply or "").strip() and i < len(chain) - 1:
+            continue
+        if behavior and behavior.get("enabled"):
+            reply = behavior_engine.humanize(reply, chat=(channel == "chat"))
+        reply = reply_safety.finalize_reply(
+            reply, message=message, emotion=emotion,
+            person=related_person if related_person else None)
+        if cacheable and reply and not reply.startswith("[reply fallback"):
+            teacher_learning.remember_exchange(message=message, reply=reply)
+        return reply
 
-    # OFFLINE path: no LLM, or the teacher failed. Talk from what we've learned.
+    # OFFLINE path: every real model failed. Talk from what we've learned.
     offline = _offline_reply(message, decision, behavior, intent, cacheable, channel)
     return reply_safety.finalize_reply(
         offline, message=message, emotion=emotion,
