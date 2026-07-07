@@ -6,6 +6,7 @@ These are red-team tests: they feed the agent the exact payloads an attacker
 """
 from __future__ import annotations
 
+import json
 import subprocess
 
 import pytest
@@ -413,3 +414,90 @@ def test_risk_summary_built(repo, monkeypatch):
                         autonomy="yolo", verify=False)
     assert "Risk tier" in run.risk_summary
     assert "app/main.py" in run.risk_summary
+
+
+# ── Phase C: smart decisions (options/confidence) + token saving ─
+
+def test_plan_with_options_and_confidence_prints(repo, monkeypatch, capsys):
+    plan = {"understanding": "u", "approach_review": "r",
+            "options": [{"name": "A", "approach": "use a map",
+                         "tradeoffs": "more memory"},
+                        {"name": "B", "approach": "use a loop",
+                         "tradeoffs": "slower"}],
+            "recommended": "A", "confidence": 82,
+            "steps": ["s"], "risks": [], "files_to_touch": []}
+    llm = _ScriptedLLM([json.dumps({"plan": plan})])
+    monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
+    from app.coding import cli
+    rc = cli.main(["--plan", "-C", str(repo), "do a thing"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Options" in out
+    assert "recommended" in out
+    assert "Confidence" in out and "82%" in out
+
+
+def test_plan_without_options_still_prints(repo, monkeypatch, capsys):
+    llm = _ScriptedLLM([json.dumps({"plan": _plan(["app/main.py"])})])
+    monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
+    from app.coding import cli
+    rc = cli.main(["--plan", "-C", str(repo), "do a thing"])
+    assert rc == 0
+    assert "Shree's plan" in capsys.readouterr().out
+
+
+def test_exec_budget_adaptive():
+    assert agent._exec_budget("short", {"steps": ["a", "b"]}) == 1600
+    assert agent._exec_budget("x" * 100, {"steps": ["a"] * 10}) == 2600
+    assert agent._exec_budget("a medium length task here",
+                              {"steps": ["a", "b", "c", "d", "e"]}) == 2000
+
+
+def test_prior_reads_summary_filters_to_successful_reads():
+    turns = [
+        agent.Turn("read_file", {"path": "app/main.py"}, "1\tdef add...", True),
+        agent.Turn("write_file", {"path": "x"}, "wrote", True),
+        agent.Turn("read_file", {"path": "missing"}, "not found", False),
+        agent.Turn("grep", {"pattern": "foo"}, "hit", True),
+    ]
+    summary = agent._prior_reads_summary(turns)
+    assert "read_file app/main.py" in summary
+    assert "grep" in summary
+    assert "write_file" not in summary       # mutating tool excluded
+    assert "missing" not in summary          # failed read excluded
+    assert "do NOT re-read" in summary
+
+
+def test_execute_accepts_prior_reads(repo, monkeypatch):
+    llm = _ScriptedLLM([
+        '{"thought":"done","done":true,"summary":"ok"}',
+        '{"approved":true,"note":"ok"}',
+    ])
+    monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
+    run = agent.execute("x", str(repo), autonomy="yolo", verify=False,
+                        prior_reads=[agent.Turn("read_file",
+                                                {"path": "app/main.py"},
+                                                "...", True)])
+    assert run.done is True
+
+
+def test_low_confidence_review_raises_alert(repo, monkeypatch):
+    llm = _ScriptedLLM([
+        '{"thought":"done","done":true,"summary":"first"}',
+        '{"approved":true,"confidence":40,"note":"risky"}',
+    ])
+    monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
+    run = agent.execute("fix add()", str(repo), autonomy="yolo", verify=False)
+    assert any("low-confidence" in a for a in run.alerts)
+    assert "40%" in run.review_note
+
+
+def test_high_confidence_review_no_alert(repo, monkeypatch):
+    llm = _ScriptedLLM([
+        '{"thought":"done","done":true,"summary":"first"}',
+        '{"approved":true,"confidence":90,"note":"solid"}',
+    ])
+    monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
+    run = agent.execute("fix add()", str(repo), autonomy="yolo", verify=False)
+    assert not any("low-confidence" in a for a in run.alerts)
+    assert "90%" in run.review_note

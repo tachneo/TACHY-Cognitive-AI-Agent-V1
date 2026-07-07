@@ -57,12 +57,19 @@ _PLAN_SYSTEM = (
     "reviewer of HIS approach: if his idea has a flaw, a simpler path, or a "
     "risk, say so plainly and recommend the better approach — that is the whole "
     "point. Then give a concrete step-by-step plan.\n"
+    "When there is a genuine design choice, give 2-3 options with tradeoffs and "
+    "recommend the one with the highest probability of solving it correctly and "
+    "the smallest sensible change. When the path is obvious, one option is fine. "
+    "Confidence is your honest probability (0-100) that the recommended approach "
+    "solves the task correctly without rework. Never inflate it.\n"
     "You may use read-only tools (read_file/list_dir/glob/grep) to ground the "
     "plan in the real repo, one JSON action per turn:\n"
     '  {"thought":"...","tool":"grep","args":{"pattern":"..."}}\n'
     "When ready, reply with ONLY:\n"
     '  {"plan":{"understanding":"...", "approach_review":"<review of his '
-    "approach, mistakes, better idea, risks>\", \"steps\":[\"...\"], "
+    "approach, mistakes, better idea, risks>\", \"options\":[{\"name\":\"A\","
+    "\"approach\":\"...\",\"tradeoffs\":\"...\",\"effort\":\"low|med|high\"}], "
+    "\"recommended\":\"A\", \"confidence\":<0-100>, \"steps\":[\"...\"], "
     '"risks":["..."], "files_to_touch":["..."]}}'
 )
 
@@ -70,10 +77,11 @@ _REVIEW_SYSTEM = (
     "You are Shree doing a final self-review of your own diff before telling "
     "Rohit it's done — like a careful code reviewer catching your own bugs. "
     "Given the task and the diff, reply with ONLY one JSON object:\n"
-    '  {"approved":true, "note":"<one line>"}   if it correctly and completely '
-    "solves the task with no obvious bug, or\n"
-    '  {"approved":false, "issues":["..."]}      if something is wrong, missing, '
-    "or risky. Be strict; a false 'approved' costs Rohit real bugs."
+    '  {"approved":true, "confidence":<0-100>, "note":"<one line>"}   if it '
+    "correctly and completely solves the task with no obvious bug, or\n"
+    '  {"approved":false, "confidence":<0-100>, "issues":["..."]}      if '
+    "something is wrong, missing, or risky. Be strict; a false 'approved' costs "
+    "Rohit real bugs. Confidence is your honest probability the change is correct."
 )
 
 _READ_ONLY = {"read_file", "list_dir", "glob", "grep"}
@@ -213,6 +221,36 @@ def _compact(transcript: list[dict], keep_recent: int = 16) -> list[dict]:
     return head + [synopsis] + transcript[-keep_recent:]
 
 
+def _exec_budget(task: str, plan: dict | None, base: int = 2000) -> int:
+    """Adaptive completion budget — smaller for simple tasks (saves tokens +
+    latency on NVIDIA's reasoning model), larger for complex multi-step work.
+    Stays at/above NVIDIA's reasoning_budget floor so it always takes effect."""
+    steps = len((plan or {}).get("steps") or [])
+    if len(task) < 80 and steps <= 3:
+        return 1600
+    if steps >= 8:
+        return 2600
+    return base
+
+
+def _prior_reads_summary(turns: list[Turn]) -> str:
+    """Compact summary of read-only observations from planning, so execute()
+    doesn't pay for re-reading the same files (token + round-trip saving)."""
+    lines: list[str] = []
+    for t in turns:
+        if t.tool not in {"read_file", "grep", "list_dir", "glob"} or not t.ok:
+            continue
+        what = t.args.get("path") or t.args.get("pattern") or ""
+        obs = (t.observation or "").replace("\n", " ")[:180]
+        lines.append(f"- {t.tool} {what}: {obs}")
+        if len(lines) >= 12:
+            break
+    if not lines:
+        return ""
+    return ("\nPrior reads from planning (you already saw these — do NOT re-read "
+            "them unless they may have changed):\n" + "\n".join(lines) + "\n")
+
+
 def make_plan(task: str, workdir: str, *, max_read_steps: int = 8) -> AgentRun:
     run = AgentRun(task=task, workdir=workdir)
     sb = T.Sandbox(workdir)
@@ -259,24 +297,29 @@ def _run_verification(sb: T.Sandbox, run: AgentRun, test_command: str | None,
     return res.ok, res.output[-1500:]
 
 
-def _self_review(provider, run: AgentRun, sb: T.Sandbox) -> tuple[bool, str, list]:
+def _self_review(provider, run: AgentRun, sb: T.Sandbox):
     diff = sb.git_diff().output[:6000]
     transcript = [{"role": "user",
                    "content": f"Task:\n{run.task}\n\nYour diff:\n{diff}\n\nReview."}]
     try:
         raw = _converse(provider, _REVIEW_SYSTEM, transcript, 700, run)
     except Exception:  # noqa: BLE001
-        return True, "review skipped (LLM error)", []
+        return True, "review skipped (LLM error)", [], None
     obj = _extract_json(raw) or {}
+    confidence = obj.get("confidence")
+    if isinstance(confidence, (int, float)):
+        confidence = int(confidence)
+    else:
+        confidence = None
     if obj.get("approved") is False:
-        return False, "", obj.get("issues", ["unspecified review issue"])
-    return True, obj.get("note", "reviewed"), []
+        return False, "", obj.get("issues", ["unspecified review issue"]), confidence
+    return True, obj.get("note", "reviewed"), [], confidence
 
 
 def execute(task: str, workdir: str, *, plan: dict | None = None,
             autonomy: str | None = None, approver=None,
             max_steps: int | None = None, verify: bool | None = None,
-            on_alert=None) -> AgentRun:
+            on_alert=None, prior_reads: list[Turn] | None = None) -> AgentRun:
     s = get_settings()
     autonomy = autonomy or s.coding_autonomy
     max_steps = max_steps or s.coding_max_steps
@@ -299,9 +342,13 @@ def execute(task: str, workdir: str, *, plan: dict | None = None,
             except Exception:  # noqa: BLE001 — UI must never break the run
                 pass
 
+    budget = _exec_budget(task, plan)
+
     intro = (f"{grounding}\n\n" if grounding else "") + f"Task from Rohit:\n{task}\n"
     if plan:
         intro += f"\nApproved plan:\n{json.dumps(plan, indent=2)}\n"
+    if prior_reads:
+        intro += "\n" + _prior_reads_summary(prior_reads)
     if test_command:
         intro += f"\nVerify your work by running: {test_command}\n"
     intro += "\nBegin. One JSON action per turn."
@@ -313,9 +360,9 @@ def execute(task: str, workdir: str, *, plan: dict | None = None,
 
     for step in range(max_steps):
         run.steps = step + 1
-        transcript = _compact(transcript)
+        transcript = _compact(transcript, keep_recent=12)
         try:
-            raw = _converse(provider, _SYSTEM, transcript, 2000, run)
+            raw = _converse(provider, _SYSTEM, transcript, budget, run)
         except Exception as exc:  # noqa: BLE001
             run.error = f"LLM error: {type(exc).__name__}: {exc}"
             break
@@ -355,7 +402,7 @@ def execute(task: str, workdir: str, *, plan: dict | None = None,
             # SELF-REVIEW gate — critique the diff once before finishing.
             if not reviewed:
                 reviewed = True
-                approved, note, issues = _self_review(provider, run, sb)
+                approved, note, issues, conf = _self_review(provider, run, sb)
                 if not approved:
                     transcript.append({"role": "assistant", "content": json.dumps(obj)})
                     transcript.append({"role": "user", "content":
@@ -363,6 +410,11 @@ def execute(task: str, workdir: str, *, plan: dict | None = None,
                                        "before done]\n- " + "\n- ".join(issues)})
                     continue
                 run.review_note = note
+                if conf is not None:
+                    run.review_note = f"{note} (confidence {conf}%)"
+                    if conf < 60:
+                        _alert(f"low-confidence self-review: {conf}% — "
+                               "double-check the diff before trusting it")
             run.done = True
             run.summary = obj.get("summary", "")
             break

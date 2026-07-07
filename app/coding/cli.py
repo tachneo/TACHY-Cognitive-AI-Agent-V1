@@ -41,6 +41,20 @@ def _print_plan(plan: dict) -> None:
         print(_cyan("Understanding: ") + plan["understanding"] + "\n")
     if plan.get("approach_review"):
         print(_yellow("Review of your approach:\n") + plan["approach_review"] + "\n")
+    if plan.get("options"):
+        print(_cyan("Options:"))
+        rec = plan.get("recommended")
+        for opt in plan["options"]:
+            name = opt.get("name", "?")
+            mark = _green("  ✓ recommended") if name == rec else ""
+            print(f"  • {name}: {opt.get('approach', '')}{mark}")
+            if opt.get("tradeoffs"):
+                print(_dim(f"      tradeoffs: {opt['tradeoffs']}"))
+        print()
+    if plan.get("confidence") is not None:
+        c = plan["confidence"]
+        col = _red if c < 60 else _yellow if c < 80 else _green
+        print(col("Confidence: ") + f"{c}%\n")
     if plan.get("steps"):
         print(_cyan("Steps:"))
         for i, s in enumerate(plan["steps"], 1):
@@ -86,7 +100,8 @@ def _run_task(task: str, workdir: str, autonomy: str, plan_only: bool) -> int:
 
     print(_dim("\nworking…\n"))
     run = agent.execute(task, workdir, plan=planned.plan, autonomy=autonomy,
-                        approver=_approver, on_alert=_on_alert)
+                        approver=_approver, on_alert=_on_alert,
+                        prior_reads=planned.turns)
     for t in run.turns:
         mark = _green("✓") if t.ok else _red("✗")
         detail = t.args.get("path") or t.args.get("command") \
