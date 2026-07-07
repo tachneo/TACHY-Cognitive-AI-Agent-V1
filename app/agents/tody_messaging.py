@@ -51,6 +51,19 @@ def send_direct(username: str, body: str) -> dict:
     log_event("directed_message_sent",
               detail=f"to=@{user['username']}; conversation_id={conversation_id}",
               risk_tier="high")
+    # Action continuity: remember WHO Shree messaged and what, so she can later
+    # answer "did niva reply?" / "did you send her anything?" from memory instead
+    # of going blank. Stored as episodic with related_person = the recipient.
+    try:
+        from app.memory import dialogue_memory
+        dialogue_memory.remember_turn(
+            channel="tody", conversation_id=conversation_id,
+            direction="outbound_direct", body=text,
+            person=user["display_name"] or user["username"],
+            importance=7,
+        )
+    except Exception:  # noqa: BLE001 — memory must never break a successful send
+        pass
     return {"sent": True, "to": user["username"],
             "display_name": user["display_name"],
             "conversation_id": conversation_id, "result": res}

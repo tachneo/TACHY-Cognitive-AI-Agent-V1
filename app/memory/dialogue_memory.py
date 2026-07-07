@@ -100,6 +100,28 @@ def summarize_conversation(conversation_id: int | str, limit: int = 12) -> dict:
     }
 
 
+def recall_person(person: str, *, limit: int = 8) -> list[dict]:
+    """Recall Shree's recent interactions WITH a person (inbound from them and
+    outbound to them), across all conversations. Used so she can answer
+    'did Niva reply?' / 'did you message her?' from memory.
+
+    Searches by the related_person column (where the recipient is stored), not
+    by title/content, so it actually finds the messages sent TO that person."""
+    name = (person or "").strip()
+    if not name:
+        return []
+    hits = base_memory.search_by_person(name, limit=limit * 2)
+    out: list[dict] = []
+    for h in hits:
+        if h.memory_type not in {"episodic", "relationship", "emotional"}:
+            continue
+        out.append({"id": h.id, "title": h.title, "content": (h.content or "")[:200],
+                    "type": h.memory_type})
+        if len(out) >= limit:
+            break
+    return out
+
+
 def identity_context(conversation_id: int | str, person: str | None = None) -> str:
     summary = summarize_conversation(conversation_id)
     who = person or "unknown user"

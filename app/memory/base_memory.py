@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from app.db.models import CognitiveMemory, session_scope
 
@@ -140,3 +140,40 @@ def _hit(m: CognitiveMemory, score: float) -> MemoryHit:
         id=int(m.id), memory_type=m.memory_type, project=m.project,
         title=m.title, content=m.content, emotion_tag=m.emotion_tag, score=score,
     )
+
+
+def counts_by_type() -> dict[str, int]:
+    """How many memories of each type — used by the self-model to truthfully
+    report the size of Shree's persistent brain."""
+    with session_scope() as s:
+        rows = s.execute(
+            select(CognitiveMemory.memory_type,
+                   func.count(CognitiveMemory.id))
+            .where(CognitiveMemory.is_archived.is_(False))
+            .group_by(CognitiveMemory.memory_type)
+        ).all()
+    return {str(t): int(n) for t, n in rows}
+
+
+def recall_rich(text: str, *, limit: int = 5) -> list[MemoryHit]:
+    """Same as recall() but here so callers can get ranked hits with content
+    for grounding replies in WHAT she remembers, not just titles."""
+    return recall(text, limit=limit)
+
+
+def search_by_person(person: str, *, limit: int = 20) -> list[MemoryHit]:
+    """All non-archived memories whose related_person matches `person`
+    (case-insensitive).
+
+    Used for action continuity: 'did Niva reply?' needs Shree's interactions
+    WITH Niva, which are stored under related_person, not in the title/content
+    that the generic search() filters on."""
+    name = (person or "").strip()
+    if not name:
+        return []
+    with session_scope() as s:
+        stmt = (select(CognitiveMemory)
+                .where(CognitiveMemory.is_archived.is_(False))
+                .where(func.lower(CognitiveMemory.related_person) == name.lower()))
+        rows = s.scalars(stmt.limit(limit)).all()
+        return [_hit(m, 0.0) for m in rows]

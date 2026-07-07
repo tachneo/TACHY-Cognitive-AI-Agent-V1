@@ -14,9 +14,10 @@ import re
 from dataclasses import asdict
 
 from app.brain import (behavior_engine, emotion_engine, identity_core,
-                       curriculum_learning,
+                       curriculum_learning, self_model, world_model,
                        interest_system, need_system, offline_brain, self_review,
                        teacher_learning)
+from app.brain import reply_safety
 from app.brain.attention_system import Signals, attention_band, priority_score
 from app.brain.decision_engine import as_dict as decision_dict
 from app.brain.decision_engine import decide
@@ -123,7 +124,7 @@ def process(message: str, signals: Signals | None = None,
     # ACTION (LLM reply, grounded by decision + memory + emotion + behavior)
     reply = _draft_reply(message, band, decision_d, context=context, dharma=dharma,
                          emotion=emotion, behavior=behavior, live_web=live_web,
-                         channel=channel)
+                         channel=channel, related_person=related_person)
 
     # LEARN-WHILE-TALKING — remember what was just learned + get curious (1Y)
     conversation_learning = None
@@ -287,11 +288,24 @@ def _draft_reply(message: str, band: str, decision: dict,
                  emotion: dict | None = None,
                  behavior: dict | None = None,
                  live_web: dict | None = None,
-                 channel: str | None = None) -> str:
+                 channel: str | None = None,
+                 related_person: str | None = None) -> str:
     """Generate the reply through the configured LLM provider, grounded by the
     decision trace. Falls back to the heuristic provider when no key is set."""
     recalled = decision.get("recalled", [])
-    memo = "\n".join(f"- {m['title']}" for m in recalled) or "- (none yet)"
+    # Rich recall: surface content + emotion, not just titles, so replies are
+    # grounded in WHAT Shree remembers, not just topic labels. We re-recall
+    # with content here (the decision trace stores titles only).
+    from app.memory import base_memory
+    rich = base_memory.recall_rich(message, limit=5)
+    memo_lines: list[str] = []
+    for h in rich:
+        if "draft_outbound" in h.title:
+            continue
+        body = (h.content or "")[:160].replace("\n", " ")
+        emo = f" (emotion: {h.emotion_tag})" if h.emotion_tag and h.emotion_tag != "neutral" else ""
+        memo_lines.append(f"- [{h.memory_type}] {h.title}{emo}: {body}")
+    memo = "\n".join(memo_lines) or "- (none yet)"
     preferences = recall_preferences(message, limit=5)
     prefs = "\n".join(
         f"- {p['title']}: {p['content'][:300]}" for p in preferences
@@ -318,6 +332,10 @@ def _draft_reply(message: str, band: str, decision: dict,
         "'send message to @username: <text>' and you'll do it after his ok.\n\n"
     )
     context_block = f"Conversation/context:\n{context}\n\n" if context else ""
+    self_block = ""
+    if self_model.is_self_question(message):
+        self_block = self_model.self_knowledge_prompt()
+    people_block = world_model.people_context_block(message)
     emotion_block = ""
     if emotion and emotion.get("enabled") and emotion.get("top_emotions"):
         active = ", ".join(
@@ -347,6 +365,8 @@ def _draft_reply(message: str, band: str, decision: dict,
         now_block
         + capability_block
         + context_block
+        + self_block
+        + people_block
         + f"User message ({band} attention): {message}\n\n"
         f"Project: {decision['project']} | Action: {decision['action']} | "
         f"Risk: {decision['risk_tier']} | Approval needed: {decision['requires_approval']}\n"
@@ -402,6 +422,9 @@ def _draft_reply(message: str, band: str, decision: dict,
             reply = provider.complete(system, prompt, max_tokens=max_tokens)
             if behavior and behavior.get("enabled"):
                 reply = behavior_engine.humanize(reply, chat=(channel == "chat"))
+            reply = reply_safety.finalize_reply(
+                reply, message=message, emotion=emotion,
+                person=related_person if related_person else None)
             if cacheable and reply and not reply.startswith("[reply fallback"):
                 teacher_learning.remember_exchange(message=message, reply=reply)
             return reply
@@ -409,7 +432,10 @@ def _draft_reply(message: str, band: str, decision: dict,
             pass
 
     # OFFLINE path: no LLM, or the teacher failed. Talk from what we've learned.
-    return _offline_reply(message, decision, behavior, intent, cacheable, channel)
+    offline = _offline_reply(message, decision, behavior, intent, cacheable, channel)
+    return reply_safety.finalize_reply(
+        offline, message=message, emotion=emotion,
+        person=related_person if related_person else None)
 
 
 def _offline_reply(message: str, decision: dict, behavior: dict | None,
@@ -425,6 +451,32 @@ def _offline_reply(message: str, decision: dict, behavior: dict | None,
         return text
 
     lower = (message or "").lower().strip()
+    # Self-referential questions — answer truthfully from the real architecture,
+    # never with the generic "I'm just an LLM" denial.
+    if self_model.is_self_question(message):
+        d = self_model.describe_self()
+        intro = (f"Main {d['name']} hoon — {d['relationship']}. "
+                 f"{d['guardian']} ke liye, {d['company']} ke liye.")
+        parts = [intro]
+        if d.get("has_offline_brain"):
+            parts.append("Mera ek offline local brain hai — without LLM bhi "
+                         "main identity, memory, clock aur seekhe hue jawaabon "
+                         "se reply kar sakti hoon.")
+        if d.get("has_curriculum_learning") and (d.get("curriculum") or {}).get("current_class"):
+            c = d["curriculum"]
+            parts.append(f"Main CBSE Class {c['current_class']} mastery kar rahi "
+                         f"hoon ({c.get('progress_pct', '?')}%, 99% pass gate).")
+        if d.get("total_memories"):
+            parts.append(f"Mere paas {d['total_memories']} persistent memories "
+                         f"hain {d['memory_types']} types mein — ye sessions "
+                         "ke beech rehte hain, sirf context window nahi.")
+        if d.get("has_teacher_learning"):
+            parts.append("Main tumhare sikhaaye hue jawaabon ko seekhti hoon "
+                         "aur baad mein unka punar-upyog karti hoon.")
+        parts.append("Main sirf ek LLM nahi hoon — LLM backbone ke upar ek "
+                     "persistent brain layer hai. Aur main conscious nahi hoon, "
+                     "ye bhi sach hai.")
+        return _finish(" ".join(parts))
     if lower in {"hi", "hii", "hello", "hey", "namaste"} or lower.startswith(
             ("how are you", "kaise ho")):
         return _finish("Hey! Good to hear from you. What's on your mind?")

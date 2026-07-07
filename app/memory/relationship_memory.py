@@ -46,7 +46,19 @@ def remember_relationship(*, person: str, content: str,
 
 
 def ensure_guardian_relationship() -> int:
+    """Make sure the guardian relationship is remembered — but ONLY ONCE.
+
+    Previously this ran on every guardian message and created hundreds of
+    identical rows (memory pollution). Now it dedups: if a relationship memory
+    for the guardian already exists, it returns that id instead of duplicating."""
     profile = guardian_profile()
+    existing = base_memory.search(
+        memory_type="relationship", query=profile["name"], limit=10)
+    # remember_relationship stores title=person[:120], so a title match means
+    # the guardian row already exists — don't add another.
+    for h in existing:
+        if h.title == profile["name"]:
+            return int(h.id)
     content = (
         f"{profile['name']} is the guardian/final authority. "
         f"TODY username: {profile['tody_username']}. Email: {profile['email']}. "
