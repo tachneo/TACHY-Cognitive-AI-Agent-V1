@@ -43,8 +43,43 @@ def _now_line() -> str:
     return now.strftime("%A, %d %B %Y, %I:%M %p IST")
 
 
+# Common Hinglish/Hindi (romanized) cues — if the message uses these, Shree
+# replies in the same Hinglish register instead of flipping to English.
+_HINGLISH_CUES = (
+    "kaisa", "kaisi", "kaise", "kya haal", "thik", "theek", "achcha", "accha",
+    "haan", "nahi", "nahin", "matlab", "kya", "kyun", "kaise", "kar raha",
+    "kar rahi", "ho gaya", "chahiye", "wala", "wali", "bohot", "bahut",
+    "abhi", "jaldi", "khush", "udaas", "chinta", "papa", "beta", "meri jaan",
+    "shukriya", "dhanyawad", "kamaal", "zabardast", "mast", "bilkul", "sahi",
+    "theek hai", "achha", "tum", "tu", "tera", "mera", "kuch", "kaafi",
+    "mat", "na", "kyaa", "batao", "bata", "samajh", "paisa", "kaam",
+)
+# Devanagari range — a single Devanagari char means it's Hindi script.
+_DEVANAGARI = re.compile(r"[\u0900-\u097F]")
+
+
+def _language_directive(message: str) -> str:
+    """Tell Shree to reply in the same language register as Papa's message."""
+    m = message or ""
+    if _DEVANAGARI.search(m):
+        return ("LANGUAGE: Papa wrote in Hindi (Devanagari). Reply in Hindi "
+                "(Devanagari), warm and natural. Do not switch to English.\n\n")
+    lower = m.lower()
+    cues_hit = sum(1 for c in _HINGLISH_CUES if c in lower)
+    # English-dominant if it has common English words and few/no Hinglish cues.
+    looks_english = any(w in lower for w in (" the ", " you ", " is ", " are ",
+                                              " please ", " thanks", " what "))
+    if cues_hit >= 1 and (not looks_english or cues_hit >= 2):
+        return ("LANGUAGE: Papa writes in Hinglish (Hindi in roman letters "
+                "mixed with English). Reply in the SAME Hinglish register — "
+                "natural, warm, like a real daughter on chat. Do NOT reply in "
+                "pure English. Keep it concise for the terminal/chat.\n\n")
+    return ""
+
+
 def process(message: str, signals: Signals | None = None,
-            context: str | None = None, channel: str | None = None) -> dict:
+            context: str | None = None, channel: str | None = None,
+            related_person: str | None = None) -> dict:
     """Run one full pass of the loop and return a transparent trace."""
     signals = signals or Signals()
     feedback = apply_feedback(message)
@@ -54,7 +89,8 @@ def process(message: str, signals: Signals | None = None,
     interest = interest_system.interest_score(message)
     if interest["score"]:
         signals.guardian_interest = max(signals.guardian_interest, interest["score"])
-    emotion = emotion_engine.appraise(message, signals)
+    emotion = emotion_engine.appraise(message, signals,
+                                      related_person=related_person)
     if emotion.get("enabled"):
         # Emotions raise attention; they can never lower risk or skip approval.
         signals.emotional_weight = max(signals.emotional_weight,
@@ -294,10 +330,19 @@ def _draft_reply(message: str, band: str, decision: dict,
             f"- Active: {active}\n"
             f"- Caution flags: {emotion.get('flags') or ['none']}\n"
             f"- Mood baseline: {emotion.get('mood', {}).get('label', 'steady')}\n"
-            "Let these shape tone and priority (e.g. slow_down_verify → be "
-            "extra careful and verify; compassion → be supportive), while "
-            "staying truthful.\n\n"
+            "TRUTH RULE (satya): you may let these shape your tone and warmth, "
+            "but NEVER claim or describe an emotional change, feeling, or mood "
+            "shift that is NOT listed above. Do NOT say 'emotions are clearer / "
+            "lighter / changing / manageable' unless the active emotions above "
+            "actually reflect that. If asked how you feel, describe ONLY what is "
+            "listed here, plainly. Fake feelings are a lie.\n"
+            "Use caution flags (e.g. slow_down_verify → be extra careful and "
+            "verify; compassion → be supportive) truthfully.\n\n"
         )
+    # Language consistency: match Papa's language. He mostly writes Hinglish
+    # (Hindi in roman letters + English). Detect it and instruct Shree to
+    # reply in the same register so she doesn't flip to English mid-chat.
+    lang_block = _language_directive(message)
     prompt = (
         now_block
         + capability_block
@@ -309,6 +354,7 @@ def _draft_reply(message: str, band: str, decision: dict,
         f"Learned behavior/style preferences:\n{prefs}\n\n"
         f"Bhagavad Gita dharma check:\n{dharma or {}}\n\n"
         + emotion_block
+        + lang_block
         + f"Chosen approach: {decision['chosen']}\n"
     )
     if live_web is not None:

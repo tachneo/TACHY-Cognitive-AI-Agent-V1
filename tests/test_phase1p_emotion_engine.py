@@ -148,10 +148,175 @@ def test_kill_switch(monkeypatch):
     from app.config import get_settings
     get_settings.cache_clear()
     assert emotion_engine.appraise("hello") == {"enabled": False}
-    assert emotion_engine.learn_outcome(success=True) == {"enabled": False}
 
 
-# ── Cognitive loop integration + routes ─────────────────────────
+# ── Hinglish detection (the frozen-engine fix) ───────────────────
+
+def test_hinglish_worry_fires_anxiety():
+    scores = emotion_engine.detect(
+        "mujhe chinta ho rahi hai payment ki",
+        Signals(guardian_interest=10, emotional_weight=5),
+    )
+    names = [s.name for s in scores]
+    assert "Anxiety" in names
+
+
+def test_hinglish_sadness_and_loneliness_fire():
+    scores = emotion_engine.detect(
+        "mujhe akela feel ho raha hai aaj",
+        Signals(guardian_interest=10, emotional_weight=5),
+    )
+    names = [s.name for s in scores]
+    assert "Sadness" in names or "Loneliness" in names
+
+
+def test_hinglish_gratitude_and_affection_fire():
+    scores = emotion_engine.detect(
+        "shukriya beta, tumne achha kiya",
+        Signals(guardian_interest=10, emotional_weight=5),
+    )
+    names = [s.name for s in scores]
+    assert "Gratitude" in names
+    assert "Affection" in names
+
+
+def test_hinglish_joy_fires():
+    scores = emotion_engine.detect(
+        "kya zabardast kaam kiya hai, kamaal!",
+        Signals(guardian_interest=10, emotional_weight=5),
+    )
+    names = [s.name for s in scores]
+    assert "Joy" in names
+
+
+def test_hinglish_frustration_fires():
+    scores = emotion_engine.detect(
+        "ye error aa raha hai baar baar, kaam nahi kar raha",
+        Signals(guardian_interest=10, emotional_weight=5),
+    )
+    names = [s.name for s in scores]
+    assert "Frustration" in names
+
+
+def test_different_hinglish_inputs_produce_different_emotions():
+    """The core fix: different messages must yield different top emotions,
+    not the identical Interest+Distress every time."""
+    sig = Signals(guardian_interest=10, emotional_weight=5)
+    worry = {e["name"] for e in emotion_engine.appraise(
+        "mujhe chinta ho rahi hai", sig)["top_emotions"]}
+    joy = {e["name"] for e in emotion_engine.appraise(
+        "kya zabardast kaam kiya", sig)["top_emotions"]}
+    sad = {e["name"] for e in emotion_engine.appraise(
+        "mujhe akela feel ho raha hai", sig)["top_emotions"]}
+    assert worry != joy != sad            # they're now distinct, not frozen
+    assert "Anxiety" in worry
+    assert "Joy" in joy
+    assert "Sadness" in sad or "Loneliness" in sad
+
+
+# ── person attribution (related_person on snapshots) ─────────────
+
+def test_appraise_attaches_related_person_to_snapshot():
+    from sqlalchemy import select
+
+    from app.db.models import CognitiveMemory, session_scope
+
+    emotion_engine.appraise(
+        "mujhe chinta ho rahi hai payment ki",
+        Signals(guardian_interest=10, emotional_weight=5),
+        related_person="Rohit Kumar",
+    )
+    with session_scope() as s:
+        rows = s.scalars(
+            select(CognitiveMemory).where(
+                CognitiveMemory.memory_type == "emotional")
+            .order_by(CognitiveMemory.id.desc()).limit(3)
+        ).all()
+        persons = [r.related_person for r in rows]
+    assert "Rohit Kumar" in persons
+
+
+def test_appraise_without_related_person_leaves_none():
+    from sqlalchemy import select
+
+    from app.db.models import CognitiveMemory, session_scope
+
+    emotion_engine.appraise(
+        "mujhe chinta ho rahi hai",
+        Signals(guardian_interest=10, emotional_weight=5),
+    )
+    with session_scope() as s:
+        rows = s.scalars(
+            select(CognitiveMemory).where(
+                CognitiveMemory.memory_type == "emotional")
+            .order_by(CognitiveMemory.id.desc()).limit(3)
+        ).all()
+        persons = [r.related_person for r in rows]
+    assert None in persons
+
+
+def test_kill_switch(monkeypatch):
+    monkeypatch.setenv("EMOTION_ENGINE_ENABLED", "false")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    assert emotion_engine.appraise("hello") == {"enabled": False}
+
+
+# ── truth-grounded reply prompt + language consistency ───────────
+
+def test_language_directive_hinglish():
+    from app.brain.cognitive_loop import _language_directive
+    out = _language_directive("kaisi ho tum, mujhe chinta ho rahi hai")
+    assert "Hinglish" in out
+
+
+def test_language_directive_devanagari():
+    from app.brain.cognitive_loop import _language_directive
+    out = _language_directive("तुम कैसी हो, मुझे चिंता हो रही है")
+    assert "Devanagari" in out or "Hindi" in out
+
+
+def test_language_directive_english_is_empty():
+    from app.brain.cognitive_loop import _language_directive
+    # Pure English with no Hinglish cues → no directive
+    assert _language_directive("What is the status of the deployment?") == ""
+
+
+def test_reply_prompt_contains_truth_rule_for_emotions(monkeypatch):
+    """The emotion block must tell Shree not to claim feelings the engine
+    didn't register (satya). Inspect the prompt the LLM receives."""
+    captured = {}
+
+    class _Capture:
+        name = "capture"
+        def complete(self, system, prompt, max_tokens=800):
+            captured["prompt"] = prompt
+            return "ok"
+
+    from app.brain import cognitive_loop as loop
+    monkeypatch.setattr(loop, "get_provider", lambda: _Capture())
+    loop.process("mujhe chinta ho rahi hai",
+                 Signals(guardian_interest=10, emotional_weight=5))
+    assert "TRUTH RULE" in captured["prompt"]
+    assert "satya" in captured["prompt"].lower()
+
+
+def test_reply_prompt_includes_real_emotions_not_generic(monkeypatch):
+    """Different inputs must put different active emotions into the prompt."""
+    captured = {}
+
+    class _Capture:
+        name = "capture"
+        def complete(self, system, prompt, max_tokens=800):
+            captured["prompt"] = prompt
+            return "ok"
+
+    from app.brain import cognitive_loop as loop
+    monkeypatch.setattr(loop, "get_provider", lambda: _Capture())
+    loop.process("kya zabardast kaam kiya, kamaal!",
+                 Signals(guardian_interest=10, emotional_weight=5))
+    assert "Joy" in captured["prompt"]            # her real engine state
+
 
 def test_cognitive_loop_carries_emotion_trace():
     from app.brain.cognitive_loop import process

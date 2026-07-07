@@ -410,6 +410,9 @@ def draft_reply_to_message(
                 ),
                 context=context,
                 channel="chat",
+                related_person=person if is_guardian
+                              else ((sender or {}).get("name")
+                                    or (sender or {}).get("display_name")),
             )
     reply = brain["reply"]
     if reply.lstrip().startswith("[reply fallback"):

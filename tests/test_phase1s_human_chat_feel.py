@@ -240,7 +240,7 @@ def test_guardian_direct_reply_sends_native_typing_status(monkeypatch):
 def test_presence_honesty_in_context(monkeypatch):
     captured = {}
 
-    def fake_process(message, signals=None, context=None, channel=None):
+    def fake_process(message, signals=None, context=None, channel=None, **kwargs):
         captured["context"] = context
         captured["channel"] = channel
         return {"reply": "A fresh reply."}
