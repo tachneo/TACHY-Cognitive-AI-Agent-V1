@@ -25,7 +25,8 @@ from app.coding import tools as T
 from app.config import get_settings
 from app.llm.provider import get_coding_provider
 from app.safety import risk_classifier
-from app.safety.audit_logger import log_event
+from app.safety import secret_detector as sec
+from app.safety.audit_logger import log_event_safe
 from app.safety.policy import RiskTier
 
 _SYSTEM = (
@@ -173,7 +174,7 @@ def _dispatch(sb: T.Sandbox, tool: str, args: dict, *, read_only: bool,
         return _blocked(f"tool '{tool}' not allowed during planning")
     if tier is RiskTier.FORBIDDEN:
         msg = risk_classifier.reason(tool, tier)
-        log_event("coding_action_blocked", detail=f"tool={tool}; args={args}",
+        log_event_safe("coding_action_blocked", detail=f"tool={tool}; args={args}",
                   risk_tier="forbidden", actor="shree")
         return _blocked(msg)
     needs_approval = tier is RiskTier.HIGH
@@ -186,7 +187,7 @@ def _dispatch(sb: T.Sandbox, tool: str, args: dict, *, read_only: bool,
                 else f"{tool}: {args.get('path', '')}")
         if approver is None or not approver(what):
             msg = risk_classifier.reason(tool, tier)
-            log_event("coding_action_denied",
+            log_event_safe("coding_action_denied",
                       detail=f"tool={tool}; {msg}", risk_tier=tier.value,
                       actor="shree")
             return _blocked(msg + " (denied / no approver)")
@@ -251,6 +252,14 @@ def _prior_reads_summary(turns: list[Turn]) -> str:
             "them unless they may have changed):\n" + "\n".join(lines) + "\n")
 
 
+def _args_for_log(args: dict) -> str:
+    """Stringify tool args for the audit log with any secrets redacted, so a
+    secret the agent is writing never lands in the audit trail either."""
+    s = json.dumps(args, default=str)[:300]
+    safe, _ = sec.redact(s)
+    return safe
+
+
 def make_plan(task: str, workdir: str, *, max_read_steps: int = 8) -> AgentRun:
     run = AgentRun(task=task, workdir=workdir)
     sb = T.Sandbox(workdir)
@@ -274,7 +283,7 @@ def make_plan(task: str, workdir: str, *, max_read_steps: int = 8) -> AgentRun:
             continue
         if "plan" in obj:
             run.plan = obj["plan"]
-            log_event("coding_plan_made", detail=f"task={task[:80]}")
+            log_event_safe("coding_plan_made", detail=f"task={task[:80]}")
             return run
         tool, args = obj.get("tool", ""), obj.get("args", {})
         res = _dispatch(sb, tool, args, read_only=True, autonomy="plan_first")
@@ -357,6 +366,19 @@ def execute(task: str, workdir: str, *, plan: dict | None = None,
     fail_streak = 0
     recent_sigs: list[str] = []
     reviewed = False
+    audit_warned = False
+
+    def _audit_call(tool: str, args: dict, res: T.ToolResult) -> None:
+        nonlocal audit_warned
+        aid = log_event_safe(
+            "coding_tool_call",
+            detail=f"tool={tool}; ok={res.ok}; tier={res.risk_tier}; "
+                  f"args={_args_for_log(args)}; out={res.output[:120]!r}",
+            risk_tier=res.risk_tier, actor="shree")
+        if aid is None and not audit_warned:
+            audit_warned = True
+            _alert("audit: DB unavailable — tool calls are being logged to the "
+                   "file fallback only (storage/logs/audit_fallback.log)")
 
     for step in range(max_steps):
         run.steps = step + 1
@@ -444,6 +466,7 @@ def execute(task: str, workdir: str, *, plan: dict | None = None,
                    "plan's files_to_touch; confirm this is intended")
         if _TIER_RANK.get(res.risk_tier, 0) > _TIER_RANK.get(run.max_tier, 0):
             run.max_tier = res.risk_tier
+        _audit_call(tool, args, res)
 
         # Stuck-detection: same failing action repeated → stop and ask.
         sig = f"{tool}:{json.dumps(args, sort_keys=True)[:120]}:{res.ok}"
@@ -482,7 +505,7 @@ def execute(task: str, workdir: str, *, plan: dict | None = None,
         sb.collapse_to(base_ref)
     run.elapsed_s = round(time.monotonic() - started, 1)
     run.risk_summary = _build_risk_summary(run)
-    log_event("coding_run",
+    log_event_safe("coding_run",
               detail=(f"task={task[:50]}; done={run.done}; verified={run.verified}; "
                       f"stuck={run.stuck}; files={len(run.changed_files)}; "
                       f"steps={run.steps}; tokens~{run.tokens_est}; "

@@ -501,3 +501,95 @@ def test_high_confidence_review_no_alert(repo, monkeypatch):
     run = agent.execute("fix add()", str(repo), autonomy="yolo", verify=False)
     assert not any("low-confidence" in a for a in run.alerts)
     assert "90%" in run.review_note
+
+
+# ── Phase D: per-tool-call audit + file fallback + redacted args ─
+
+def test_log_event_safe_falls_back_to_file(monkeypatch, tmp_path):
+    from app.safety import audit_logger
+
+    def _boom(*a, **kw):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(audit_logger, "log_event", _boom)
+    fb = tmp_path / "audit_fallback.log"
+    audit_logger.set_fallback_path(fb)
+    try:
+        assert audit_logger.log_event_safe("coding_tool_call",
+                                           detail="tool=x", risk_tier="low") is None
+        assert fb.exists()
+        line = fb.read_text(encoding="utf-8").strip()
+        assert "coding_tool_call" in line and "tool=x" in line
+    finally:
+        audit_logger.set_fallback_path("storage/logs/audit_fallback.log")
+
+
+def test_every_tool_call_is_audited(repo, monkeypatch):
+    from sqlalchemy import select
+
+    from app.db.models import CognitiveAuditLog, session_scope
+
+    llm = _ScriptedLLM([
+        '{"thought":"read","tool":"read_file","args":{"path":"app/main.py"}}',
+        '{"thought":"edit","tool":"edit_file","args":{"path":"app/main.py",'
+        '"old":"a - b","new":"a + b"}}',
+        '{"thought":"done","done":true,"summary":"done"}',
+        '{"approved":true,"note":"ok"}',
+    ])
+    monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
+    agent.execute("fix add()", str(repo), plan=_plan(["app/main.py"]),
+                  autonomy="yolo", verify=False)
+    with session_scope() as s:
+        calls = s.scalars(
+            select(CognitiveAuditLog).where(
+                CognitiveAuditLog.action == "coding_tool_call")
+        ).all()
+        n = len(calls)
+    assert n >= 2                               # read_file + edit_file audited
+
+
+def test_audit_args_have_secrets_redacted(repo, monkeypatch):
+    from sqlalchemy import select
+
+    from app.db.models import CognitiveAuditLog, session_scope
+
+    llm = _ScriptedLLM([
+        '{"thought":"write","tool":"write_file","args":{"path":"app/conf.py",'
+        '"content":"KEY = \\"sk-ant-api03-1234567890abcdefghijklmnopqrstuvwx\\"\\n"}}',
+        '{"thought":"done","done":true,"summary":"done"}',
+        '{"approved":true,"note":"ok"}',
+    ])
+    monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
+    agent.execute("add a key constant", str(repo), autonomy="yolo", verify=False)
+    with session_scope() as s:
+        rows = s.scalars(
+            select(CognitiveAuditLog).where(
+                CognitiveAuditLog.action == "coding_tool_call")
+        ).all()
+        detail = " ".join(r.detail or "" for r in rows)   # read while bound
+    assert "sk-ant-api03" not in detail        # secret never enters the audit trail
+    assert "REDACTED" in detail
+
+
+def test_audit_db_degraded_raises_one_alert(repo, monkeypatch, tmp_path):
+    from app.safety import audit_logger
+
+    def _down(*a, **kw):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(audit_logger, "log_event", _down)
+    fb = tmp_path / "audit_fb.log"
+    audit_logger.set_fallback_path(fb)
+    try:
+        llm = _ScriptedLLM([
+            '{"thought":"read","tool":"read_file","args":{"path":"app/main.py"}}',
+            '{"thought":"done","done":true,"summary":"done"}',
+            '{"approved":true,"note":"ok"}',
+        ])
+        monkeypatch.setattr(agent, "get_coding_provider", lambda: llm)
+        run = agent.execute("fix add()", str(repo), autonomy="yolo", verify=False)
+        audit_alerts = [a for a in run.alerts if a.startswith("audit:")]
+        assert len(audit_alerts) == 1          # warned once, not per-turn
+        assert fb.exists()                     # and the call was file-logged
+    finally:
+        audit_logger.set_fallback_path("storage/logs/audit_fallback.log")
