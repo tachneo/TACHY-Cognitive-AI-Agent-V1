@@ -303,7 +303,8 @@ def run(message: str, *, conversation_id: int | str | None = None,
     an empty reply + error if the loop couldn't converge (caller falls back to
     the single-shot path)."""
     result = ChatLoopResult()
-    provider = get_provider()
+    from app.llm.provider import get_social_provider
+    provider = get_social_provider()  # fast pool model — tool loop runs inside chat
     if getattr(provider, "name", "llm") == "heuristic":
         result.error = "no LLM available for tool loop"
         return result

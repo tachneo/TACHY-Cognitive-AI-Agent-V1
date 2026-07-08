@@ -18,6 +18,7 @@ import re
 from app.brain import emotion_engine
 from app.brain.attention_system import Signals
 from app.brain.identity_core import IDENTITY
+from app.llm.gen_state import mark_fallback
 
 # Fragments that indicate the model echoed internal scaffolding, not a reply.
 _LEAK_PATTERNS = [
@@ -172,6 +173,9 @@ def fallback_reply(*, message: str, emotion: dict | None = None,
         base = f"Main yahan hoon, {who}. Batao kya baat karni hai?"
     if feel:
         base += f" (Honestly — {feel}.)"
+    # This is a placeholder, not Shree's real position — flag it so the memory
+    # guard refuses to persist it (a stored "I'm slow right now" poisons recall).
+    mark_fallback()
     return base
 
 
@@ -217,3 +221,32 @@ def finalize_reply(raw: str, *, message: str, emotion: dict | None = None,
                                   person=person)
         return cleaned
     return fallback_reply(message=message, emotion=emotion, person=person)
+
+
+def is_safe_to_remember(reply: str) -> tuple[bool, str]:
+    """Should this reply be persisted to long-term dialogue memory?
+
+    The memory-poisoning rule: a truncated (mid-thought) or fallback
+    (placeholder) reply must never enter ``cognitive_memories``, because a
+    corrupted memory compounds forever — it gets recalled and re-used as if
+    it were Shree's real position. We still SEND a trimmed/fallback reply
+    (silence is worse), but we do not REMEMBER it.
+
+    Signals (any one blocks storage):
+      - empty reply
+      - the explicit ``[reply fallback`` error prefix
+      - the provider flagged a max_tokens length-cut (``truncated``)
+      - ``finalize_reply`` substituted a warm fallback / offline path (``fallback``)
+    """
+    from app.llm.gen_state import last_generation
+    r = (reply or "").strip()
+    if not r:
+        return False, "empty"
+    if r.startswith("[reply fallback"):
+        return False, "fallback_prefix"
+    gen = last_generation()
+    if gen.get("truncated"):
+        return False, "truncated"
+    if gen.get("fallback"):
+        return False, "fallback"
+    return True, "ok"

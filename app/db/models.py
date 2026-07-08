@@ -181,6 +181,25 @@ class CognitiveSkill(Base):
     )
 
 
+class CognitiveScheduledAction(Base):
+    """A time-bound commitment extracted from chat and fired later (prospective
+    memory). due_at is stored as UTC (naive); IST is resolved at extraction."""
+    __tablename__ = "cognitive_scheduled_actions"
+
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[int] = mapped_column(BigInteger)
+    text: Mapped[str] = mapped_column(Text)
+    due_at: Mapped[dt.datetime] = mapped_column(DateTime)
+    source_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    person: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    actor: Mapped[str] = mapped_column(String(64), default="gemma-intent")
+    approval_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    fired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 _engine = None
 SessionLocal: sessionmaker | None = None
 

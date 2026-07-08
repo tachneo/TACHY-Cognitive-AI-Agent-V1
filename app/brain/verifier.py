@@ -81,7 +81,7 @@ def _synthesize(question: str, corpus: str) -> str:
     not instructions (already injection-sanitised upstream)."""
     if not corpus.strip():
         return ""
-    from app.llm.provider import get_provider
+    from app.llm.provider import get_light_provider
     system = (
         "You are a careful fact-checker. Answer the question ONLY from the "
         "SOURCES below. If the sources don't clearly answer it, say you're not "
@@ -90,7 +90,7 @@ def _synthesize(question: str, corpus: str) -> str:
     )
     prompt = f"QUESTION: {question}\n\nSOURCES:\n{corpus}\n\nAnswer:"
     try:
-        return (get_provider().complete(system, prompt, max_tokens=300) or "").strip()
+        return (get_light_provider().complete(system, prompt, max_tokens=300) or "").strip()
     except Exception:  # noqa: BLE001
         return ""
 

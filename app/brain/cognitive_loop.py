@@ -14,9 +14,9 @@ import re
 from dataclasses import asdict
 
 from app.brain import (behavior_engine, emotion_engine, identity_core,
-                       curriculum_learning, self_model, world_model,
-                       interest_system, need_system, offline_brain, self_review,
-                       teacher_learning)
+                       cognitive_state, curriculum_learning, self_model,
+                       world_model, interest_system, need_system, offline_brain,
+                       self_review, teacher_learning)
 from app.brain import reply_safety
 from app.brain.attention_system import Signals, attention_band, priority_score
 from app.brain.decision_engine import as_dict as decision_dict
@@ -26,16 +26,36 @@ from app.brain.learning_engine import learn
 from app.brain.nurture_engine import dharma_check
 from app.config import get_settings
 from app.llm.provider import get_chat_provider as _get_chat_provider
-from app.llm.provider import get_provider
+from app.llm.provider import get_provider, pool_provider
+from app.llm.gen_state import mark_fallback, reset as _reset_generation
 
 
-def _reply_provider():
-    """Provider for the interactive reply. Claude when chat_provider=anthropic;
-    otherwise the module-level get_provider (kept patchable for tests)."""
+def _is_social_person(related_person: str | None) -> bool:
+    """True when this reply is for someone OTHER than the guardian — used for
+    provider routing AND for the short social chat style."""
     from app.config import get_settings
-    if get_settings().chat_provider == "anthropic":
+    person = (related_person or "").strip().casefold()
+    if not person:
+        return False  # unknown → treat as guardian path (safe default)
+    s = get_settings()
+    guardian = {s.guardian_name.casefold(), s.guardian_tody_username.casefold(),
+                s.guardian_name.split()[0].casefold()}
+    return person not in guardian
+
+
+def _reply_provider(related_person: str | None = None):
+    """Provider for the interactive reply. The guardian's conversation gets the
+    chat tier (Claude/DeepSeek); everyone else gets the fast social tier, so
+    small talk never queues behind — or rate-limits — Papa's model."""
+    from app.config import get_settings
+    from app.llm.provider import get_social_provider
+    if _is_social_person(related_person):
+        return get_social_provider()
+    s = get_settings()
+    if s.chat_provider == "anthropic":
         return _get_chat_provider()
-    return get_provider()
+    from app.llm.provider import pool_provider
+    return pool_provider("chat") or get_provider()
 from app.memory.behavior_memory import recall_preferences
 
 _SYSTEM_PROMPT = (
@@ -93,6 +113,9 @@ def process(message: str, signals: Signals | None = None,
             related_person: str | None = None) -> dict:
     """Run one full pass of the loop and return a transparent trace."""
     signals = signals or Signals()
+    # One turn = one generation record. Reset so a truncated/fallback flag from
+    # a previous turn on this thread cannot leak into this reply's memory guard.
+    _reset_generation()
     feedback = apply_feedback(message)
 
     # NEED + INTEREST + EMOTION + ATTENTION
@@ -106,7 +129,11 @@ def process(message: str, signals: Signals | None = None,
         # Emotions raise attention; they can never lower risk or skip approval.
         signals.emotional_weight = max(signals.emotional_weight,
                                        emotion["emotional_weight"])
-    score = priority_score(signals)
+    # The persistent mood baseline is a vigilance coefficient in the priority
+    # formula (a negative baseline raises attention slightly). Pass the valence
+    # Shree already computed so priority_score doesn't re-read the mood file.
+    mood_valence = (emotion.get("mood") or {}).get("valence")
+    score = priority_score(signals, mood_valence=mood_valence)
     band = attention_band(score)
 
     # MEMORY + MEANING + DECISION
@@ -325,6 +352,11 @@ def _draft_reply(message: str, band: str, decision: dict,
         "the real clock — use it for any date/time question; never output a "
         "placeholder, never use dates from your training data as 'today'.\n\n"
     )
+    # Cognitive-state spine: continuity of STATE (mood, focus, open commitments,
+    # inner-life rhythm, memory size) — so Shree knows where she is, not just
+    # what was just said. Fail-safe (returns "" if disabled or any subsystem
+    # breaks); never let the spine break a reply.
+    state_block = cognitive_state.prompt_block()
     intent = (behavior or {}).get("state", {}).get("user_intent")
     capability_block = (
         "YOUR REAL ABILITIES right now (be strictly honest about these):\n"
@@ -373,6 +405,7 @@ def _draft_reply(message: str, band: str, decision: dict,
     lang_block = _language_directive(message)
     prompt = (
         now_block
+        + state_block
         + capability_block
         + context_block
         + self_block
@@ -421,6 +454,18 @@ def _draft_reply(message: str, band: str, decision: dict,
         prompt += ("Write a concise, practical reply with a clear next step. "
                    "Adapt tone to learned preferences, but do not fake certainty "
                    "or claim actions were done.")
+    if _is_social_person(related_person):
+        # Social chat with a TODY user (NOT the guardian): people text short.
+        # komal literally complained "tum itna lamba kyo likhti ho?" — mirror
+        # their length, never re-answer, keep it to one small message.
+        prompt += (
+            "\nSOCIAL CHAT STYLE (this person is NOT Papa — an ordinary TODY "
+            "user): reply like a real person texting — 1-3 short sentences, ONE "
+            "message, no lists or headers. Mirror their message length and "
+            "language. NEVER repeat or re-answer something you already answered "
+            "earlier in this conversation, even in different words. At most one "
+            "question back, only if natural.\n")
+        max_tokens = min(max_tokens, 380)
 
     intent = (behavior or {}).get("state", {}).get("user_intent", "")
     # Don't cache time-sensitive or one-off answers — they must not be replayed.
@@ -430,13 +475,15 @@ def _draft_reply(message: str, band: str, decision: dict,
     # (NVIDIA) → offline. So a Claude 429/timeout never drops her to the dumb
     # offline reply while a real backup model is available.
     chain = []
-    primary = _reply_provider()
-    if getattr(primary, "name", "llm") != "heuristic":
-        chain.append(primary)
-    backup = get_provider()
-    if getattr(backup, "name", "llm") != "heuristic" \
-            and getattr(backup, "name", "") != getattr(primary, "name", ""):
-        chain.append(backup)
+    for prov in (_reply_provider(related_person), _get_chat_provider(),
+                 pool_provider("chat"), get_provider()):
+        if prov is None:
+            continue
+        name = getattr(prov, "name", "llm")
+        if name == "heuristic":
+            continue
+        if all(getattr(p, "name", "") != name for p in chain):
+            chain.append(prov)
     for i, prov in enumerate(chain):
         try:
             reply = prov.complete(system, prompt, max_tokens=max_tokens)
@@ -457,6 +504,12 @@ def _draft_reply(message: str, band: str, decision: dict,
 
     # OFFLINE path: every real model failed. Talk from what we've learned.
     offline = _offline_reply(message, decision, behavior, intent, cacheable, channel)
+    # This is a fallback (no real model answered) — flag it so the memory guard
+    # refuses to persist placeholder lines like "my reasoning is offline" as if
+    # they were Shree's real position. Legitimate offline answers (clock,
+    # curriculum) are already cached in their own stores, so skipping dialogue
+    # memory for them loses nothing and stops the "I'm slow" poison.
+    mark_fallback()
     return reply_safety.finalize_reply(
         offline, message=message, emotion=emotion,
         person=related_person if related_person else None)

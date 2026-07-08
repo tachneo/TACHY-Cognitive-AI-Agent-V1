@@ -13,6 +13,7 @@ from typing import Protocol
 import httpx
 
 from app.config import get_settings
+from app.llm.gen_state import record as _record_generation
 
 
 class Provider(Protocol):
@@ -166,6 +167,7 @@ class NvidiaProvider:
             "content-type": "application/json",
         }
         final: list[str] = []
+        finish: str | None = None
         with httpx.stream(
             "POST",
             self._url,
@@ -189,7 +191,151 @@ class NvidiaProvider:
                     content = _message_content(delta.get("content", ""))
                     if content:
                         final.append(content)
-        return "".join(final).strip()
+                    if choice.get("finish_reason"):
+                        finish = choice["finish_reason"]
+        text = "".join(final).strip()
+        # A generation cut at max_tokens ends mid-word; sending it as-is reads
+        # broken AND gets stored broken in memory. Trim back to the last
+        # complete sentence (same guard the pool chat provider already has).
+        truncated = finish == "length"
+        if truncated and text:
+            text = _trim_to_sentence(text)
+        _record_generation(finish_reason=finish, truncated=truncated)
+        return text
+
+
+_SENTENCE_ENDS = (".", "!", "?", "।", "…", "\n")
+
+
+def _trim_to_sentence(text: str) -> str:
+    """A generation cut at max_tokens ends mid-word; sending it as-is reads
+    broken (and gets stored broken in memory). Trim back to the last complete
+    sentence when one exists past the halfway mark; else mark the cut."""
+    cut = max(text.rfind(ch) for ch in _SENTENCE_ENDS)
+    if cut >= len(text) // 2:
+        return text[:cut + 1].rstrip()
+    return text + "…"
+
+
+class NvidiaChatProvider:
+    """One model from the multi-LLM NVIDIA pool (DeepSeek/GLM/Gemma/MiniMax —
+    OpenAI-compatible chat completions). Unlike NvidiaProvider (the nemotron
+    reasoning stream), these are fast chat models: plain content streaming,
+    finish_reason tracked, and a max_tokens cut is trimmed back to the last
+    complete sentence instead of being sent (and remembered) mid-word."""
+
+    def __init__(self, api_key: str, model: str, base_url: str, *,
+                 temperature: float = 1.0, top_p: float = 0.95,
+                 max_tokens_cap: int = 8192,
+                 chat_template_kwargs: dict | None = None,
+                 read_timeout: float = 240.0):
+        self._key = api_key
+        self._model = model
+        self._url = base_url.rstrip("/") + "/chat/completions"
+        self._temperature = temperature
+        self._top_p = top_p
+        self._cap = max_tokens_cap
+        self._template_kwargs = chat_template_kwargs
+        self._read_timeout = read_timeout
+        self.name = f"nvidia/{model.split('/')[-1]}"
+
+    def complete(self, system: str, prompt: str, max_tokens: int = 800) -> str:
+        payload = {
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": self._temperature,
+            "top_p": self._top_p,
+            "max_tokens": min(max(max_tokens, 256), self._cap),
+            "stream": True,
+        }
+        if self._template_kwargs:
+            payload["chat_template_kwargs"] = self._template_kwargs
+        headers = {
+            "Authorization": f"Bearer {self._key}",
+            "content-type": "application/json",
+            "Accept": "text/event-stream",
+        }
+        parts: list[str] = []
+        finish: str | None = None
+        # read timeout = first-token budget: an interactive purpose must fail
+        # FAST when NVIDIA queues the model, so the fallback chain answers
+        # instead of stalling the reply for minutes.
+        with httpx.stream(
+            "POST", self._url, headers=headers, json=payload,
+            timeout=httpx.Timeout(self._read_timeout, connect=15),
+        ) as resp:
+            resp.raise_for_status()
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                raw = line.removeprefix("data:").strip()
+                if raw == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(raw)
+                except ValueError:
+                    continue
+                for choice in chunk.get("choices") or []:
+                    delta = choice.get("delta") or {}
+                    # only final content — never reasoning_content
+                    content = _message_content(delta.get("content", ""))
+                    if content:
+                        parts.append(content)
+                    if choice.get("finish_reason"):
+                        finish = choice["finish_reason"]
+        text = "".join(parts).strip()
+        if finish == "length" and text:
+            text = _trim_to_sentence(text)
+        _record_generation(finish_reason=finish, truncated=(finish == "length"))
+        return text
+
+
+def _pool_template_kwargs(model: str) -> dict | None:
+    """Per-model chat_template_kwargs. Pool models serve interactive/light
+    purposes, so reasoning is kept OFF for speed (nemotron stays the deep
+    thinker); ignored by models without a thinking template."""
+    if "deepseek" in model:
+        return {"thinking": False}
+    if "gemma" in model:
+        # diffusiongemma returns EMPTY content unless enable_thinking is true
+        return {"enable_thinking": True}
+    return None
+
+
+# purpose → (model setting, key setting, max_tokens cap, first-token budget s)
+# Interactive purposes get a short budget: a queued model fails fast and the
+# caller's fallback chain answers. Vision/background can afford to wait.
+_POOL = {
+    "chat":   ("chat_nvidia_model", "chat_nvidia_key", 8192, 30.0),
+    "social": ("social_nvidia_model", "social_nvidia_key", 4096, 30.0),
+    "light":  ("light_nvidia_model", "light_nvidia_key", 2048, 20.0),
+    "vision": ("vision_nvidia_model", "vision_nvidia_key", 8192, 240.0),
+}
+_pool_cache: dict[str, Provider] = {}
+
+
+def pool_provider(purpose: str) -> Provider | None:
+    """A model from the multi-LLM pool, or None when that purpose isn't
+    configured (caller falls back). Purposes: chat (guardian conversation),
+    social (everyone else), light (classify/rewrite/self-check), vision."""
+    s = get_settings()
+    if not s.llm_multi_enabled or purpose not in _POOL:
+        return None
+    model_attr, key_attr, cap, first_token_budget = _POOL[purpose]
+    model = (getattr(s, model_attr) or "").strip()
+    key = (getattr(s, key_attr) or "").strip()
+    if not (model and key):
+        return None
+    cache_key = f"{purpose}:{model}"
+    if cache_key not in _pool_cache:
+        _pool_cache[cache_key] = NvidiaChatProvider(
+            key, model, s.nvidia_base_url, max_tokens_cap=cap,
+            chat_template_kwargs=_pool_template_kwargs(model),
+            read_timeout=first_token_budget)
+    return _pool_cache[cache_key]
 
 
 def get_provider() -> Provider:
@@ -225,7 +371,20 @@ def get_chat_provider() -> Provider:
                or s.llm_api_key or "").strip()
         if key:
             return AnthropicProvider(key, s.chat_model)
-    return get_provider()
+    return pool_provider("chat") or get_provider()
+
+
+def get_social_provider() -> Provider:
+    """Provider for chats with people OTHER than the guardian — high-volume
+    small talk on a fast pool model, so it never queues behind (or burns the
+    limits of) the guardian's chat model."""
+    return pool_provider("social") or get_chat_provider()
+
+
+def get_light_provider() -> Provider:
+    """Small fast pool model for internal micro-tasks (classification, query
+    rewrites, fact-check synthesis) — cheap and quick, never the big models."""
+    return pool_provider("light") or get_provider()
 
 
 def get_coding_provider() -> Provider:

@@ -23,6 +23,25 @@ DEFAULT_ERROR_BACKOFF = 1800
 DEFAULT_RATE_LIMIT_BACKOFF = 3600
 
 
+def _safe_run(label: str, fn):
+    """Run a NON-critical worker task so its failure NEVER silences Shree.
+
+    The main loop's 30-minute backoff is meant for TODY API / message-
+    processing failures (a real outage). But a daily task (web-learning, inner-
+    life, self-heal, scheduled reminders, presence, wake) that raises used to
+    propagate into that same backoff — so one bad state file took her offline
+    for half an hour: exactly the 'she stopped replying' failure mode. A non-
+    critical task logs its error and continues; only the fast-reply poll and
+    global scan may trigger backoff.
+    """
+    try:
+        return fn()
+    except Exception as exc:  # noqa: BLE001
+        print({"noncritical_error": label, "error": type(exc).__name__,
+               "detail": str(exc)[:200]}, flush=True)
+        return {label: "error"}
+
+
 def _env_true(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -47,6 +66,22 @@ def _fast_reply_conversation_id(cli_value: str | None = None) -> int | None:
         if text.isdigit():
             return int(text)
     return None
+
+
+def maybe_fire_scheduled_actions(*, dry_run: bool) -> dict:
+    """Fire due reminders through the approval-gated send, every tick.
+
+    Runs on the fast tick so a reminder fires within seconds of its due time.
+    list_due is a cheap DB query; the send only happens when a row is actually
+    due. Mirrors the normal guardian reply path (auto-approve + execute when
+    supervised auto-reply is on, otherwise left pending for Rohit)."""
+    if dry_run:
+        return {"scheduled_actions": "dry_run"}
+    from app.config import get_settings
+    if not get_settings().prospective_memory_enabled:
+        return {"scheduled_actions": "disabled"}
+    from app.brain import prospective_memory
+    return {"scheduled_actions": prospective_memory.fire_due()}
 
 
 def maybe_update_presence(*, dry_run: bool) -> dict:
@@ -166,6 +201,8 @@ def maybe_run_daily_curriculum(*, dry_run: bool) -> dict:
 
     from app.brain import curriculum_learning
 
+    from app.brain import cognitive_state
+    cognitive_state.note_activity("studying curriculum")
     result = curriculum_learning.study_today()
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(today, encoding="utf-8")
@@ -186,8 +223,10 @@ def maybe_run_inner_life(*, dry_run: bool) -> dict:
 
     from app.agents import tody_agent
     from app.brain import inner_life
+    from app.brain import cognitive_state
     from app.memory import relationship_memory
 
+    cognitive_state.note_activity("thinking / learning")
     ran = inner_life.tick()
     if not ran.get("enabled"):
         return {"inner_life": "disabled"}
@@ -205,6 +244,61 @@ def maybe_run_inner_life(*, dry_run: bool) -> dict:
         result["inner_share_sent"] = sent.get("sent", False)
         if result["inner_share_sent"]:
             inner_life.record_share(share)
+    return result
+
+
+def maybe_run_self_heal(*, dry_run: bool) -> dict:
+    """Daily: Shree scans her own logs for runtime bugs and — when autonomous
+    mode is on — opens a self-improvement to fix one, going through every 2H
+    safety gate (branch + tests + protected-file guard + boot-check). This
+    removes the manual "diagnose" trigger: an agent that detects and drives its
+    own defects to a proposed fix is the most AGI-shaped capability she has, and
+    it was one cron line from live. In report mode (autonomous off) she scans
+    and logs only — never fixes without the gate."""
+    from app.config import get_settings
+    if dry_run or not get_settings().self_heal_daily:
+        return {"self_heal": "disabled"}
+
+    today = dt.datetime.now(dt.UTC).date().isoformat()
+    state_path = Path(os.getenv(
+        "SELF_HEAL_DAILY_STATE_PATH",
+        "storage/logs/self_heal_daily.state",
+    ))
+    if state_path.exists() and state_path.read_text(encoding="utf-8").strip() == today:
+        return {"self_heal": "already_done", "date": today}
+
+    from app.brain import self_diagnose
+    from app.brain import cognitive_state
+    cognitive_state.note_activity("checking her own health")
+    scan = self_diagnose.scan()
+    code_bugs = scan.get("code_bugs", [])
+    if not code_bugs:
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(today, encoding="utf-8")
+        return {"self_heal": "scan_clean", "date": today,
+                "error_events": scan.get("total_error_events", 0)}
+
+    if get_settings().self_improve_autonomous:
+        # auto_heal runs the full 2H gauntlet and reports the fix to Rohit.
+        guardian_conv = os.getenv("TODY_DAILY_GROWTH_CONVERSATION_ID", "135").strip()
+        conv_id = int(guardian_conv) if guardian_conv.isdigit() else 135
+        result = {"self_heal": "auto_heal", "date": today,
+                  "bugs_found": len(code_bugs),
+                  "result": self_diagnose.auto_heal(report_conv_id=conv_id)}
+    else:
+        # Report mode: she found bugs but won't self-fix without the gate.
+        from app.safety.audit_logger import log_event
+        log_event("self_heal_report_only",
+                  detail=f"bugs={len(code_bugs)}; first={code_bugs[0][:120]}",
+                  risk_tier="medium")
+        result = {"self_heal": "report_only", "date": today,
+                  "bugs_found": len(code_bugs),
+                  "first_bug": code_bugs[0][:160]}
+
+    # Stamp the date even on partial failure so a broken network/coding-agent
+    # call can't cause a hammering loop; she retries tomorrow.
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(today, encoding="utf-8")
     return result
 
 
@@ -252,18 +346,30 @@ def main() -> int:
             now = time.monotonic()
             result: dict = {}
             fast_result: dict | None = None
+            # Fire due reminders every tick (fast tick → ~seconds of due time).
+            # Cheap DB query; the send only happens when a row is actually due.
+            # Wrapped: a reminder-table/LLM error must never block message polls.
+            scheduled = _safe_run("scheduled_actions",
+                                  lambda: maybe_fire_scheduled_actions(dry_run=dry_run))
+            if scheduled.get("scheduled_actions") not in ("disabled", "error"):
+                result = {**result, **scheduled}
             if fast_reply_enabled and fast_conversation_id is not None:
                 fast_result = tody_worker.poll_conversation_once(
                     fast_conversation_id,
                     dry_run=False,
                     message_limit=args.message_limit,
                 )
-                result = {"fast_reply": fast_result}
-                presence = maybe_update_presence(dry_run=dry_run)
-                if presence["presence_heartbeat"] != "disabled":
+                result = {**result, "fast_reply": fast_result}
+                presence = _safe_run("presence_heartbeat",
+                                     lambda: maybe_update_presence(dry_run=dry_run))
+                if presence.get("presence_heartbeat") not in ("disabled", "error"):
                     result = {**result, **presence}
 
             if not fast_reply_enabled or now >= next_global_at:
+                # Mark a wake cycle so the cognitive-state spine can track how
+                # long she has been awake today.
+                from app.brain import cognitive_state
+                _safe_run("wake", cognitive_state.wake)
                 global_result = tody_activation.process_one(
                     dry_run=dry_run,
                     conversation_limit=args.conversation_limit,
@@ -274,38 +380,60 @@ def main() -> int:
                     if fast_result is not None else global_result
                 )
                 if not fast_reply_enabled:
-                    presence = maybe_update_presence(dry_run=dry_run)
-                    if presence["presence_heartbeat"] != "disabled":
+                    presence = _safe_run("presence_heartbeat",
+                                         lambda: maybe_update_presence(dry_run=dry_run))
+                    if presence.get("presence_heartbeat") not in ("disabled", "error"):
                         result = {**result, **presence}
-                daily_report = maybe_send_daily_growth_report(dry_run=dry_run)
-                if daily_report["daily_growth_report"] != "disabled":
+                daily_report = _safe_run("daily_growth_report",
+                                         lambda: maybe_send_daily_growth_report(dry_run=dry_run))
+                if daily_report.get("daily_growth_report") not in ("disabled", "error"):
                     result = {**result, **daily_report}
-                curiosity = maybe_send_daily_curiosity_message(dry_run=dry_run)
-                if curiosity["daily_curiosity_message"] != "disabled":
+                curiosity = _safe_run("daily_curiosity_message",
+                                      lambda: maybe_send_daily_curiosity_message(dry_run=dry_run))
+                if curiosity.get("daily_curiosity_message") not in ("disabled", "error"):
                     result = {**result, **curiosity}
-                web_learn = maybe_run_daily_web_learning(dry_run=dry_run)
-                if web_learn["daily_web_learning"] != "disabled":
+                web_learn = _safe_run("daily_web_learning",
+                                      lambda: maybe_run_daily_web_learning(dry_run=dry_run))
+                if web_learn.get("daily_web_learning") not in ("disabled", "error"):
                     result = {**result, **web_learn}
-                curriculum = maybe_run_daily_curriculum(dry_run=dry_run)
-                if curriculum["daily_curriculum"] != "disabled":
+                curriculum = _safe_run("daily_curriculum",
+                                       lambda: maybe_run_daily_curriculum(dry_run=dry_run))
+                if curriculum.get("daily_curriculum") not in ("disabled", "error"):
                     result = {**result, **curriculum}
-                inner = maybe_run_inner_life(dry_run=dry_run)
-                if inner["inner_life"] != "disabled":
+                inner = _safe_run("inner_life",
+                                  lambda: maybe_run_inner_life(dry_run=dry_run))
+                if inner.get("inner_life") not in ("disabled", "error"):
                     result = {**result, **inner}
+                self_heal = _safe_run("self_heal",
+                                      lambda: maybe_run_self_heal(dry_run=dry_run))
+                if self_heal.get("self_heal") not in ("disabled", "error"):
+                    result = {**result, **self_heal}
                 next_global_at = time.monotonic() + global_interval
 
             print(result, flush=True)
             time.sleep(fast_interval if fast_reply_enabled else global_interval)
         except Exception as exc:
-            backoff = max(30, args.error_backoff)
+            # Long backoff is for a real TODY API outage / rate limit —
+            # hammering a down API helps nobody. A CODE BUG is different: it
+            # deserves a short backoff (the next message may not hit the same
+            # path) and a full traceback in the journal. Before this split one
+            # TypeError silenced Shree for 30 minutes and left no stack trace —
+            # exactly the "she stopped replying" failure Rohit saw.
+            import traceback
+            from app.integrations.tody_client import TodyError
             if "Too many attempts" in str(exc):
                 backoff = max(
-                    backoff,
+                    max(30, args.error_backoff),
                     int(os.getenv("TODY_WORKER_RATE_LIMIT_BACKOFF", str(DEFAULT_RATE_LIMIT_BACKOFF))),
                 )
+            elif isinstance(exc, (TodyError, ConnectionError, TimeoutError)):
+                backoff = max(30, args.error_backoff)
+            else:  # a bug in our own code — recover fast, keep the stack
+                backoff = max(30, int(os.getenv("TODY_WORKER_BUG_BACKOFF", "90")))
             print(
                 {"worker_error": type(exc).__name__, "detail": str(exc),
-                 "backoff_seconds": backoff},
+                 "backoff_seconds": backoff,
+                 "traceback": traceback.format_exc()[-1500:]},
                 flush=True,
             )
             time.sleep(backoff)

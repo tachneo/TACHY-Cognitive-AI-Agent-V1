@@ -60,6 +60,21 @@ class Settings(BaseSettings):
     chat_model: str = "claude-sonnet-5"
     chat_anthropic_key: str = ""            # falls back to coding key / llm_api_key
 
+    # Multi-LLM NVIDIA pool — different models on separate NVIDIA keys so the
+    # guardian chat, other people's small talk, and internal micro-tasks stop
+    # queueing behind the slow default reasoning model, and token/rate limits
+    # spread across keys. Any purpose without a key falls back to the default
+    # provider. Kill switch: LLM_MULTI_ENABLED=false.
+    llm_multi_enabled: bool = True
+    chat_nvidia_model: str = "deepseek-ai/deepseek-v4-pro"        # guardian chat
+    chat_nvidia_key: str = ""
+    social_nvidia_model: str = "z-ai/glm-5.2"                     # other people
+    social_nvidia_key: str = ""
+    light_nvidia_model: str = "google/diffusiongemma-26b-a4b-it"  # micro-tasks
+    light_nvidia_key: str = ""
+    vision_nvidia_model: str = "minimaxai/minimax-m3"             # multimodal
+    vision_nvidia_key: str = ""
+
     # GitHub self-lookup (Phase 2C-selfverify F2) — read-only PAT so Shree can
     # read her OWN repo when Rohit links it on TODY. Enforced allowlist: she can
     # only read repos in github_allowed_repos, never other projects. Never
@@ -135,6 +150,14 @@ class Settings(BaseSettings):
     self_improve_daily_cap: int = 3        # max autonomous upgrades per day
     self_improve_auto_deploy: bool = True  # restart service after a safe merge
 
+    # Self-heal (Phase 2K) — a daily worker tick runs self_diagnose.auto_heal()
+    # so Shree finds and fixes her own runtime bugs WITHOUT Rohit having to ask
+    # "diagnose". She still goes through every 2H safety gate (branch + tests +
+    # protected-file guard + boot-check); this only removes the manual trigger.
+    # Requires SELF_IMPROVE_AUTONOMOUS=true to actually fix — otherwise the
+    # daily tick scans and logs only (report mode). Default off: opt in.
+    self_heal_daily: bool = False
+
     # Autonomous social mode (Phase 2D) — Shree talks freely with anyone.
     # OFF by default: only the guardian gets auto-replies until you enable it.
     tody_autonomous_social: bool = False
@@ -175,6 +198,22 @@ class Settings(BaseSettings):
     web_search_enabled: bool = True
     web_search_max_sources: int = 5
     web_search_fetch_pages: int = 2      # how many top hits to read in full
+
+    # Prospective memory — Shree's scheduler. The light pool model reads every
+    # inbound guardian message for a time-bound commitment ("remind me at 3pm",
+    # "kal subah bata dena") and writes a scheduled_actions row; the worker tick
+    # fires due rows through the existing approval-gated send. Converts her from
+    # talking about the future to acting in it. Only guardian messages can create
+    # reminders (a stranger must not inject scheduled sends). Kill switch below.
+    prospective_memory_enabled: bool = True
+
+    # Cognitive state spine (Phase A) — the single live state object assembled
+    # from mood / inner-life / commitments / memory / focus, injected into every
+    # reply prompt so Shree has continuity of STATE (not just chat history).
+    # A read-model aggregator: each subsystem keeps owning its state; the spine
+    # only additionally tracks current focus + wake timing. Kill switch below.
+    cognitive_state_enabled: bool = True
+    cognitive_state_path: str = "storage/logs/cognitive_state.json"
 
 
 @lru_cache

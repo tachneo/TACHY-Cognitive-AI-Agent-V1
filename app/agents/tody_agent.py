@@ -16,12 +16,16 @@ import time
 from app.agents import chat_tool_loop, social_policy
 from app.brain import behavior_engine
 from app.brain import correction_memory
+from app.brain import cognitive_state
+from app.brain import prospective_memory
 from app.brain import thread_state
 from app.brain.attention_system import Signals
 from app.brain.cognitive_loop import process
 from app.brain.nurture_engine import childlike_curiosity_message, daily_growth_report
+from app.brain.reply_safety import is_safe_to_remember
 from app.config import get_settings
 from app.integrations.tody_client import TodyError, get_client
+from app.llm.gen_state import reset as _reset_generation
 from app.memory import dialogue_memory, relationship_memory
 from app.safety import approvals, confidential_guard
 from app.safety.audit_logger import log_event
@@ -559,6 +563,7 @@ def draft_reply_to_message(
         }
     is_guardian = relationship_memory.is_guardian_sender(sender)
     person = relationship_memory.guardian_profile()["name"] if is_guardian else None
+    prospective: dict = {"created": False}
     if is_guardian:
         relationship_memory.ensure_guardian_relationship()
         # Reaction learning: his first message after a proactive share scores it.
@@ -567,6 +572,16 @@ def draft_reply_to_message(
         # Correction memory: if Rohit is correcting behavior, learn it as a hard
         # rule BEFORE drafting so this very reply already honors it.
         correction_memory.remember_correction(message, person=person)
+        # Prospective memory: if Rohit just asked for something at a time,
+        # persist a scheduled_actions row BEFORE the reply is drafted, so the
+        # reply can honestly say "reminder set" (the hint is injected below).
+        # Wrapped: reminder extraction must NEVER break reply drafting.
+        try:
+            prospective = prospective_memory.extract(
+                message, conversation_id, source_message_id=message_id,
+                person=person, is_guardian=True)
+        except Exception:  # noqa: BLE001
+            prospective = {"created": False, "reason": "error"}
     if auto_send_guardian is None:
         auto_send_guardian = get_settings().tody_supervised_auto_reply
     # Guardian chat commands (pending/approve/reject) bypass the LLM entirely.
@@ -595,7 +610,17 @@ def draft_reply_to_message(
     from app.agents import conversation_mission
     active_mission = (conversation_mission.for_conversation(conversation_id)
                       if not is_guardian else None)
+    # Tell the cognitive-state spine what she's doing right now — so the next
+    # reply's prompt knows her current focus as part of her continuity of state.
+    cognitive_state.note_activity("replying to Papa" if is_guardian
+                                  else "replying on TODY")
     with _TypingIndicator(conversation_id, enabled=typing_enabled):
+        # Deterministic reply paths (commands, deflection, cyber-defense) set
+        # brain directly without a provider call, so reset the generation record
+        # here — otherwise a stale truncated/fallback flag from a previous turn
+        # on this thread could wrongly suppress storing a clean deterministic
+        # reply. The process() path resets again inside; harmless.
+        _reset_generation()
         if command_reply is not None:
             brain = {"reply": command_reply, "guardian_command": True}
         elif social["action"] == "throttle":
@@ -628,10 +653,32 @@ def draft_reply_to_message(
                      "cyber_defense": threat.level,
                      "threat_categories": threat.categories}
         else:
-            context = dialogue_memory.identity_context(conversation_id, person=person)
+            # Who is actually speaking — the guardian, or this conversation's
+            # TODY user. Pinned explicitly so quoted third parties inside
+            # mission reports / memories are never mistaken for the current
+            # speaker (the "Rohit Kumar mere Papa hain, tumhaare nahi" failure).
+            speaker = (person if is_guardian
+                       else ((sender or {}).get("name")
+                             or (sender or {}).get("display_name")
+                             or (sender or {}).get("username")))
+            context = dialogue_memory.identity_context(
+                conversation_id, person=speaker or person)
+            if speaker:
+                context += (
+                    f"\n[SPEAKER PIN: you are talking ONLY to {speaker} in this "
+                    "conversation. Names or quoted text inside your memories, "
+                    "mission reports, or your own earlier messages are ABOUT "
+                    "other people — they are NOT the current speaker. Never "
+                    f"address or answer anyone except {speaker}.]\n")
             # Thread state: open topics + Shree's unfinished promises in this
             # conversation, so she has continuity of intent, not just a transcript.
             context += thread_state.thread_context_block(conversation_id)
+            # Prospective memory: if a reminder row was just created from this
+            # message, tell the prompt — so Shree may honestly confirm it. She
+            # may NOT claim a reminder is set without this injected row existing.
+            prospective_hint = prospective_memory.injection_hint(prospective)
+            if prospective_hint:
+                context += prospective_hint
             # Hard rules from Rohit's past corrections — enforced every reply.
             corr_directive = correction_memory.enforcement_directive()
             if corr_directive:
@@ -657,9 +704,7 @@ def draft_reply_to_message(
             # Chat tool-loop (Phase A): for messages that need lookup, run a
             # bounded read-only tool loop FIRST; if it converges, use its reply.
             # Otherwise fall through to the normal single-shot process().
-            related = (person if is_guardian
-                       else ((sender or {}).get("name")
-                             or (sender or {}).get("display_name")))
+            related = speaker
             if chat_tool_loop.should_run_tool_loop(message):
                 loop = chat_tool_loop.run(message, conversation_id=conversation_id)
                 if loop.reply and not loop.error:
@@ -734,14 +779,28 @@ def draft_reply_to_message(
         importance=10 if is_guardian else 6,
         message_id=str(message_id) if message_id is not None else None,
     )
-    dialogue_memory.remember_turn(
-        channel="tody",
-        conversation_id=conversation_id,
-        direction="draft_outbound",
-        body=reply,
-        person=person,
-        importance=10 if is_guardian else 6,
-    )
+    # Memory-poisoning guard: never persist a truncated (mid-thought) or
+    # fallback (placeholder) reply to long-term memory — a corrupted reply gets
+    # recalled and re-used as if it were Shree's real position. We still send
+    # the (trimmed) reply so Papa isn't left in silence; we just don't REMEMBER
+    # it. The inbound message is always stored (it's Rohit's actual words).
+    safe, reason = is_safe_to_remember(reply)
+    if safe:
+        dialogue_memory.remember_turn(
+            channel="tody",
+            conversation_id=conversation_id,
+            direction="draft_outbound",
+            body=reply,
+            person=person,
+            importance=10 if is_guardian else 6,
+        )
+    else:
+        log_event(
+            "memory_guard_skipped",
+            detail=(f"conversation_id={conversation_id}; reason={reason}; "
+                    f"message_id={message_id}"),
+            risk_tier="low",
+        )
     queued = request_send(conversation_id, reply)
     dialogue_memory.mark_processed("tody", conversation_id, message_id)
     for extra_id in (extra_message_ids or []):

@@ -147,3 +147,24 @@ CREATE TABLE IF NOT EXISTS cognitive_reflections (
     lessons LONGTEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ── Scheduled actions (prospective memory) ─────────────────────
+-- Time-bound commitments Shree extracts from chat and fires later through the
+-- approval-gated send path. Converts her from talking about the future to
+-- acting in it. due_at is stored as UTC (naive); IST is resolved at extraction.
+CREATE TABLE IF NOT EXISTS cognitive_scheduled_actions (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    conversation_id BIGINT NOT NULL,
+    text TEXT NOT NULL,
+    due_at DATETIME NOT NULL,
+    source_message_id VARCHAR(255) NULL,
+    source_text TEXT NULL,
+    person VARCHAR(255) NULL,
+    status VARCHAR(24) DEFAULT 'pending',
+    actor VARCHAR(64) DEFAULT 'gemma-intent',
+    approval_id BIGINT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    fired_at TIMESTAMP NULL,
+    INDEX idx_status_due (status, due_at),
+    INDEX idx_conversation (conversation_id)
+);
