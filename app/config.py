@@ -158,6 +158,12 @@ class Settings(BaseSettings):
     # daily tick scans and logs only (report mode). Default off: opt in.
     self_heal_daily: bool = False
 
+    # Repair queue (Phase 3A, metacognitive loop) — evidence-tiered accumulator
+    # of her own failure signatures (guardian corrections > conversational
+    # ground truth > system events > LLM self-critique). Pure logging + status
+    # transitions; the repair itself still goes through the 2G/2H gates.
+    repair_queue_enabled: bool = True
+
     # Autonomous social mode (Phase 2D) — Shree talks freely with anyone.
     # OFF by default: only the guardian gets auto-replies until you enable it.
     tody_autonomous_social: bool = False

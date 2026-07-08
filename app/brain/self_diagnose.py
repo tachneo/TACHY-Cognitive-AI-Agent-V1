@@ -57,7 +57,10 @@ def _journal_errors(unit: str = "tachy-tody-worker", lines: int = 200) -> list[s
 
 
 def scan() -> dict:
-    """Find Shree's real, current problems. Returns categorised issues."""
+    """Find Shree's real, current problems. Returns categorised issues —
+    runtime tracebacks (audit + journal) AND the repair queue's ready
+    signatures, so behavioral failures she noticed herself become repair
+    candidates, not just crashes."""
     audit = _audit_errors()
     journal = _journal_errors("tachy-tody-worker") + _journal_errors("tachy-brain")
     code_bugs, env_issues = [], []
@@ -76,7 +79,19 @@ def scan() -> dict:
         if _CODE_BUG.search(ln) and ln[:60] not in seen:
             seen.add(ln[:60])
             code_bugs.append(ln.strip()[:160])
+    # The metacognitive link: her OWN accumulated noticing (repair queue).
+    try:
+        from app.brain import repair_queue
+        behavioral = repair_queue.ready(limit=8)
+    except Exception:  # noqa: BLE001
+        behavioral = []
+    for r in behavioral:
+        if r.get("fix_class") == "code":
+            code_bugs.append(
+                f"repair-queue:{r['signature']} (seen {r['recurrence']}x) — "
+                f"{(r.get('sample') or '')[:80]}")
     return {"code_bugs": code_bugs[:8], "env_issues": env_issues[:8],
+            "behavioral": behavioral,
             "total_error_events": len(audit)}
 
 
@@ -84,10 +99,16 @@ def summary() -> str:
     d = scan()
     lines = ["Ye raha mera sach-much ka self-diagnosis, Papa 🩺 (logs se, banaya "
              "nahi):", ""]
-    if not d["code_bugs"] and not d["env_issues"]:
+    if not d["code_bugs"] and not d["env_issues"] and not d.get("behavioral"):
         lines.append("Abhi koi active error/bug nahi dikh raha — main healthy "
                      "hoon 💛")
         return "\n".join(lines)
+    if d.get("behavioral"):
+        lines.append("🔁 Mere repeated behavioral failures (repair queue, "
+                     "evidence-based):")
+        lines += [f"  • {r['signature']} — {r['recurrence']}x dekha, "
+                  f"fix type: {r['fix_class']}" for r in d["behavioral"]]
+        lines.append("")
     if d["code_bugs"]:
         lines.append("🐞 Code-level issues (ye main khud fix karne ki koshish "
                      "kar sakti hoon):")
@@ -110,13 +131,34 @@ def auto_heal(report_conv_id: int = 135) -> dict:
     d = scan()
     if not d["code_bugs"]:
         return {"ok": True, "action": "none", "reason": "no code bugs to heal"}
-    gap = ("Fix this recurring runtime error found in my own logs: "
-           + d["code_bugs"][0]
+    # Prefer a repair-queue signature (HER OWN noticing, evidence-tiered) over
+    # a raw log line — and drive its status through the queue lifecycle so the
+    # one-fix-per-signature rule holds.
+    signature = None
+    target = d["code_bugs"][0]
+    for r in d.get("behavioral", []):
+        if r.get("fix_class") == "code":
+            signature = r["signature"]
+            target = (f"recurring failure signature '{r['signature']}' "
+                      f"(seen {r['recurrence']}x, evidence tier {r['tier']}): "
+                      f"{(r.get('sample') or '')[:200]}")
+            break
+    from app.brain import repair_queue, self_improve
+    if signature:
+        repair_queue.mark(signature, status="repairing")
+    gap = ("Fix this recurring problem found in my own logs/repair queue: "
+           + target
            + ". Find the root cause in the code and fix it minimally.")
-    from app.brain import self_improve
     res = self_improve.self_initiate(gap, report_conv_id=report_conv_id)
+    if signature:
+        if res.get("ok"):
+            repair_queue.mark(signature, status="fixed",
+                              note=f"self_improve id={res.get('id')}")
+        else:
+            repair_queue.mark(signature, status="ready",
+                              note=f"self_initiate failed: {res.get('reason', '')[:100]}")
     return {"ok": res.get("ok", False), "action": "self_initiate",
-            "bug": d["code_bugs"][0], "id": res.get("id")}
+            "bug": target[:160], "signature": signature, "id": res.get("id")}
 
 
 def is_diagnose_question(message: str) -> bool:

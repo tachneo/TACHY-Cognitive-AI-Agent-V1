@@ -200,6 +200,33 @@ class CognitiveScheduledAction(Base):
     fired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class CognitiveRepairIntention(Base):
+    """A recurring failure SIGNATURE Shree intends to repair — the metacognitive
+    loop's memory of her own mistakes. Evidence-tiered: guardian corrections
+    (tier 1) outrank conversational ground truth (2), hard system events (3),
+    and LLM self-critique (4, hypothesis only). One row per signature; the row
+    accumulates recurrence until its tier's threshold makes it repair-ready."""
+    __tablename__ = "cognitive_repair_intentions"
+
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    signature: Mapped[str] = mapped_column(String(160), unique=True)
+    evidence_tier: Mapped[int] = mapped_column(Integer, default=4)  # best (lowest) seen
+    fix_class: Mapped[str] = mapped_column(String(24), default="unknown")
+    # memory | directive | config | code | capability | environment | unknown
+    recurrence: Mapped[int] = mapped_column(Integer, default=1)
+    guardian_involved: Mapped[bool] = mapped_column(Boolean, default=False)
+    people: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
+    sample: Mapped[str | None] = mapped_column(Text, nullable=True)  # latest example
+    source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    conversation_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default="observing")
+    # observing | ready | repairing | fixed | escalated | dismissed
+    first_seen: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    last_seen: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    repaired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    repair_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 _engine = None
 SessionLocal: sessionmaker | None = None
 

@@ -154,7 +154,8 @@ def _observe_audit_failures() -> Initiative | None:
             rows = s.scalars(
                 select(CognitiveAuditLog).where(
                     CognitiveAuditLog.action.in_(
-                        ("reply_quality_failure", "coding_action_blocked"))
+                        ("reply_quality_failure", "coding_action_blocked",
+                         "repair_escalated"))
                 ).order_by(desc(CognitiveAuditLog.id)).limit(5)
             ).all()
             recent = [r for r in rows if r.created_at and r.created_at >= cutoff]

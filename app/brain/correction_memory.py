@@ -132,6 +132,17 @@ def remember_correction(message: str, *, person: str | None = None) -> int | Non
     log_event_safe("correction_learned",
                    detail=f"type={corr['type']}; rule={corr['rule'][:80]}",
                    risk_tier="medium", actor="shree")
+    # Tier-1 evidence: Rohit himself said the behavior was wrong. The rule is
+    # already enforced from the next reply; the repair queue tracks whether the
+    # UNDERLYING cause (prompt/code) also needs a permanent fix.
+    try:
+        from app.brain import repair_queue
+        repair_queue.note_failure(
+            f"correction:{corr['type']}", tier=1, source="correction_memory",
+            sample=corr["rule"], person=person, guardian=True,
+            fix_class="directive")
+    except Exception:  # noqa: BLE001
+        pass
     return mid
 
 

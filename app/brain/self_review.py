@@ -83,4 +83,14 @@ def review(*, message: str, reply: str, decision: dict) -> dict:
                 risk_tier="medium", actor="self_review")
         except Exception:  # noqa: BLE001
             pass
+        # Repair queue T4: self-critique is a HYPOTHESIS, never repair-worthy
+        # alone — it accumulates and only becomes ready when a higher evidence
+        # tier corroborates the same signature.
+        try:
+            from app.brain import repair_queue
+            sig = "self-critique:empty-reply" if was_empty else "self-critique:prompt-leak"
+            repair_queue.note_failure(sig, tier=4, source="self_review",
+                                      sample=text[:200], fix_class="directive")
+        except Exception:  # noqa: BLE001
+            pass
     return flags

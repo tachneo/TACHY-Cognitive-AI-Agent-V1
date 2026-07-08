@@ -564,6 +564,14 @@ def draft_reply_to_message(
     is_guardian = relationship_memory.is_guardian_sender(sender)
     person = relationship_memory.guardian_profile()["name"] if is_guardian else None
     prospective: dict = {"created": False}
+    # Repair queue T2: is this message the user complaining about a PAST reply
+    # ("itna lamba kyo", "jawab kyo nahi")? Ground truth from the person —
+    # accumulated by signature so recurring failures become repair-ready.
+    from app.brain import repair_queue
+    repair_queue.note_conversational_signals(
+        message, person=(person if is_guardian
+                         else (sender or {}).get("username")),
+        conversation_id=conversation_id, guardian=is_guardian)
     if is_guardian:
         relationship_memory.ensure_guardian_relationship()
         # Reaction learning: his first message after a proactive share scores it.
@@ -801,6 +809,12 @@ def draft_reply_to_message(
                     f"message_id={message_id}"),
             risk_tier="low",
         )
+        # Repair queue T3: a truncated/fallback reply reached the send path —
+        # a hard system event. Recurring cuts mean a budget/provider bug.
+        repair_queue.note_failure(
+            f"reply-{reason}", tier=3, source="memory_guard",
+            sample=reply[:200], conversation_id=conversation_id,
+            person=person, guardian=is_guardian, fix_class="config")
     queued = request_send(conversation_id, reply)
     dialogue_memory.mark_processed("tody", conversation_id, message_id)
     for extra_id in (extra_message_ids or []):

@@ -168,3 +168,26 @@ CREATE TABLE IF NOT EXISTS cognitive_scheduled_actions (
     INDEX idx_status_due (status, due_at),
     INDEX idx_conversation (conversation_id)
 );
+
+-- ── Repair intentions (metacognitive loop) ─────────────────────
+-- Evidence-tiered failure signatures Shree accumulates about her own mistakes.
+-- Tier 1 = guardian correction, 2 = conversational ground truth, 3 = hard
+-- system event, 4 = LLM self-critique (hypothesis only, never repairs alone).
+CREATE TABLE IF NOT EXISTS cognitive_repair_intentions (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    signature VARCHAR(160) NOT NULL UNIQUE,
+    evidence_tier INT DEFAULT 4,
+    fix_class VARCHAR(24) DEFAULT 'unknown',
+    recurrence INT DEFAULT 1,
+    guardian_involved TINYINT(1) DEFAULT 0,
+    people TEXT NULL,
+    sample TEXT NULL,
+    source VARCHAR(64) NULL,
+    conversation_id BIGINT NULL,
+    status VARCHAR(24) DEFAULT 'observing',
+    first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_seen TIMESTAMP NULL,
+    repaired_at TIMESTAMP NULL,
+    repair_note TEXT NULL,
+    INDEX idx_repair_status_tier (status, evidence_tier)
+);

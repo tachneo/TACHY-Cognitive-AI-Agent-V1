@@ -436,6 +436,16 @@ def main() -> int:
                  "traceback": traceback.format_exc()[-1500:]},
                 flush=True,
             )
+            # Repair queue T3: a worker crash is a hard system event. Recurring
+            # crash signatures become self-repair candidates for self_diagnose.
+            try:
+                from app.brain import repair_queue
+                repair_queue.note_failure(
+                    f"worker-crash:{type(exc).__name__}", tier=3,
+                    source="tody_worker_loop",
+                    sample=traceback.format_exc()[-400:], fix_class="code")
+            except Exception:  # noqa: BLE001 — noticing must never crash the crash-handler
+                pass
             time.sleep(backoff)
 
 
