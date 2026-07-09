@@ -200,6 +200,33 @@ class CognitiveScheduledAction(Base):
     fired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class CognitiveAutonomousTask(Base):
+    """A recurring task Shree registers herself and the worker fires on her
+    clock (the self-triggering loop). Handler is an allowlist key; next_run_at
+    is UTC (naive)."""
+    __tablename__ = "cognitive_autonomous_tasks"
+
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255))
+    handler: Mapped[str] = mapped_column(String(32))
+    intent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    params: Mapped[str | None] = mapped_column(Text, nullable=True)
+    interval_minutes: Mapped[int] = mapped_column(Integer)
+    at_time_hhmm: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    next_run_at: Mapped[dt.datetime] = mapped_column(DateTime)
+    last_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    runs_today: Mapped[int] = mapped_column(Integer, default=0)
+    run_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    total_runs: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    created_by: Mapped[str] = mapped_column(String(16), default="shree")
+    last_error: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class CognitiveRepairIntention(Base):
     """A recurring failure SIGNATURE Shree intends to repair — the metacognitive
     loop's memory of her own mistakes. Evidence-tiered: guardian corrections

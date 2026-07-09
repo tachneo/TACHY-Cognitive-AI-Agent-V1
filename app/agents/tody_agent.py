@@ -16,6 +16,7 @@ import time
 from app.agents import chat_tool_loop, social_policy
 from app.brain import behavior_engine
 from app.brain import correction_memory
+from app.brain import autonomous_tasks
 from app.brain import cognitive_state
 from app.brain import prospective_memory
 from app.brain import thread_state
@@ -564,6 +565,7 @@ def draft_reply_to_message(
     is_guardian = relationship_memory.is_guardian_sender(sender)
     person = relationship_memory.guardian_profile()["name"] if is_guardian else None
     prospective: dict = {"created": False}
+    auto_task: dict = {"created": False}
     # Repair queue T2: is this message the user complaining about a PAST reply
     # ("itna lamba kyo", "jawab kyo nahi")? Ground truth from the person —
     # accumulated by signature so recurring failures become repair-ready.
@@ -590,6 +592,14 @@ def draft_reply_to_message(
                 person=person, is_guardian=True)
         except Exception:  # noqa: BLE001
             prospective = {"created": False, "reason": "error"}
+        # Autonomous tasks: if Rohit is giving her a RECURRING self-task (a
+        # routine she should run herself — "roz subah errors check karo"),
+        # register it BEFORE the reply so she can honestly confirm "routine set".
+        # The self-triggering loop she asked for. Wrapped: never break drafting.
+        try:
+            auto_task = autonomous_tasks.extract_from_message(message)
+        except Exception:  # noqa: BLE001
+            auto_task = {"created": False}
     if auto_send_guardian is None:
         auto_send_guardian = get_settings().tody_supervised_auto_reply
     # Guardian chat commands (pending/approve/reject) bypass the LLM entirely.
@@ -687,6 +697,12 @@ def draft_reply_to_message(
             prospective_hint = prospective_memory.injection_hint(prospective)
             if prospective_hint:
                 context += prospective_hint
+            # Autonomous task: if a self-directed routine was just registered
+            # from this message, tell the prompt — so she may honestly confirm
+            # "routine set / I'll do this myself now".
+            auto_hint = autonomous_tasks.injection_hint(auto_task)
+            if auto_hint:
+                context += auto_hint
             # Hard rules from Rohit's past corrections — enforced every reply.
             corr_directive = correction_memory.enforcement_directive()
             if corr_directive:

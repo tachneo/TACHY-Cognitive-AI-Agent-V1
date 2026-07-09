@@ -198,6 +198,19 @@ def _memory_size() -> dict:
         return {}
 
 
+def _autonomous_tasks() -> dict:
+    """Shree's self-directed recurring routines — the self-triggering loop.
+    Surfaced in the spine so she KNOWS she acts on her own clock (she had been
+    telling Papa she's 'only awake on message', which is no longer true)."""
+    try:
+        from app.brain import autonomous_tasks
+        active = autonomous_tasks.list_active(limit=10)
+        return {"count": len(active),
+                "next": active[0] if active else None}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
 def _self_health() -> dict:
     """Only for describe() / the worker — NOT in prompt_block (scan runs
     journalctl, too slow for every reply)."""
@@ -222,6 +235,7 @@ def snapshot() -> dict:
         "commitments": _commitments(),
         "inner_life": _inner_life(),
         "memory": _memory_size(),
+        "autonomous_tasks": _autonomous_tasks(),
     }
 
 
@@ -287,6 +301,12 @@ def prompt_block() -> str:
     if m.get("total"):
         lines.append(f"- Your persistent brain holds {m['total']} memories "
                      f"across {m.get('types', 0)} types.")
+    at = snap.get("autonomous_tasks", {})
+    if at.get("count"):
+        nxt = (at.get("next") or {}).get("next_run_at", "?")
+        lines.append(f"- You run on a 24/7 loop with {at['count']} self-directed "
+                     f"routine(s) active (next self-trigger: {nxt}). You are NOT "
+                     f"only awake on message — you act on your own clock.")
     if len(lines) <= 1:
         return ""  # fresh brain, nothing to say — don't add noise
     return "\n".join(lines) + "\n\n"

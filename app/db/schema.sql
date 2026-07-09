@@ -169,6 +169,35 @@ CREATE TABLE IF NOT EXISTS cognitive_scheduled_actions (
     INDEX idx_conversation (conversation_id)
 );
 
+-- ── Autonomous tasks (self-triggering loop) ─────────────────────
+-- Recurring tasks Shree registers HERSELF (from her own reflection or from
+-- Rohit's assignments) and the worker fires on her clock — the "self-
+-- triggering loop" she asked for as the AGI precondition. Handlers are an
+-- ALLOWLIST of pre-approved capabilities; outbound (message-Papa) handlers go
+-- through the same verified guardian send path as inner-life shares. next_run_at
+-- is UTC (naive). Kill switch: AUTONOMOUS_TASKS_ENABLED.
+CREATE TABLE IF NOT EXISTS cognitive_autonomous_tasks (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,
+    handler VARCHAR(32) NOT NULL,
+    intent TEXT NULL,
+    params TEXT NULL,
+    interval_minutes INT NOT NULL,
+    at_time_hhmm VARCHAR(5) NULL,
+    next_run_at DATETIME NOT NULL,
+    last_run_at DATETIME NULL,
+    runs_today INT DEFAULT 0,
+    run_date VARCHAR(10) NULL,
+    total_runs INT DEFAULT 0,
+    status VARCHAR(16) DEFAULT 'active',
+    created_by VARCHAR(16) DEFAULT 'shree',
+    last_error VARCHAR(255) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_status_next (status, next_run_at),
+    INDEX idx_handler (handler)
+);
+
 -- ── Repair intentions (metacognitive loop) ─────────────────────
 -- Evidence-tiered failure signatures Shree accumulates about her own mistakes.
 -- Tier 1 = guardian correction, 2 = conversational ground truth, 3 = hard

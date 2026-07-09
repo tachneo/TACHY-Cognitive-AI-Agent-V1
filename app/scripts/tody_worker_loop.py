@@ -247,6 +247,22 @@ def maybe_run_inner_life(*, dry_run: bool) -> dict:
     return result
 
 
+def maybe_run_autonomous_tasks(*, dry_run: bool) -> dict:
+    """Fire Shree's self-directed recurring tasks on her own clock — the self-
+    triggering loop she asked for as the AGI precondition. Runs on the global
+    tick (not the fast-reply poll) so a slow handler (study/learn) never delays
+    Rohit's replies. Each task dispatches to an allowlisted handler; a failure
+    marks that task 'error' and never stops the rest."""
+    from app.config import get_settings
+    if dry_run or not get_settings().autonomous_tasks_enabled:
+        return {"autonomous_tasks": "disabled"}
+    from app.brain import autonomous_tasks
+    out = autonomous_tasks.run_due()
+    if not out.get("enabled"):
+        return {"autonomous_tasks": "disabled"}
+    return {"autonomous_tasks": out}
+
+
 def maybe_run_self_heal(*, dry_run: bool) -> dict:
     """Daily: Shree scans her own logs for runtime bugs and — when autonomous
     mode is on — opens a self-improvement to fix one, going through every 2H
@@ -408,6 +424,10 @@ def main() -> int:
                                       lambda: maybe_run_self_heal(dry_run=dry_run))
                 if self_heal.get("self_heal") not in ("disabled", "error"):
                     result = {**result, **self_heal}
+                auto_tasks = _safe_run("autonomous_tasks",
+                                       lambda: maybe_run_autonomous_tasks(dry_run=dry_run))
+                if auto_tasks.get("autonomous_tasks") not in ("disabled", "error"):
+                    result = {**result, **auto_tasks}
                 next_global_at = time.monotonic() + global_interval
 
             print(result, flush=True)

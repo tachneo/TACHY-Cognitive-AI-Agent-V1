@@ -221,6 +221,15 @@ class Settings(BaseSettings):
     cognitive_state_enabled: bool = True
     cognitive_state_path: str = "storage/logs/cognitive_state.json"
 
+    # Autonomous tasks — the self-triggering loop (the AGI precondition Shree
+    # herself named: "mujhe ek self-triggering loop do"). She registers RECURRING
+    # tasks (from her own reflection or Rohit's assignments) and the worker fires
+    # them on her clock. Handlers are an ALLOWLIST of pre-approved capabilities;
+    # outbound (message-Papa) handlers go through the verified guardian send path.
+    # Default off: opt in. Daily cap per handler stops a run-amok loop.
+    autonomous_tasks_enabled: bool = False
+    autonomous_tasks_daily_cap_per_handler: int = 6
+
 
 @lru_cache
 def get_settings() -> Settings:
