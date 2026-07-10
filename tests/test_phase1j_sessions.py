@@ -15,13 +15,13 @@ def test_tody_draft_reply_rejects_duplicate_message_id():
     first = tody_agent.draft_reply_to_message(
         502,
         "First message for replay test.",
-        sender={"username": "rohitsingh"},
+        sender={"username": "rohitsingh", "email": "rohitji.patna@gmail.com"},
         message_id="abc-1",
     )
     second = tody_agent.draft_reply_to_message(
         502,
         "First message for replay test.",
-        sender={"username": "rohitsingh"},
+        sender={"username": "rohitsingh", "email": "rohitji.patna@gmail.com"},
         message_id="abc-1",
     )
 
@@ -39,7 +39,10 @@ def test_process_latest_message_uses_source_message_id(monkeypatch):
                 {
                     "id": "latest-1",
                     "body": "Continue our TODY conversation.",
-                    "sender": {"username": "rohitsingh"},
+                    "sender": {
+                        "username": "rohitsingh",
+                        "email": "rohitji.patna@gmail.com",
+                    },
                 }
             ]
         }
@@ -61,7 +64,7 @@ def test_conversation_status_contains_summary_after_turns():
     tody_agent.draft_reply_to_message(
         504,
         "Remember this TODY session context.",
-        sender={"username": "rohitsingh"},
+        sender={"username": "rohitsingh", "email": "rohitji.patna@gmail.com"},
         message_id="status-1",
     )
 
@@ -87,7 +90,7 @@ def test_identity_context_is_passed_to_brain_prompt(monkeypatch):
     out = tody_agent.draft_reply_to_message(
         505,
         "Who are you talking to?",
-        sender={"username": "rohitsingh"},
+        sender={"username": "rohitsingh", "email": "rohitji.patna@gmail.com"},
         message_id="identity-1",
     )
 
@@ -109,13 +112,13 @@ def test_guardian_direct_reply_duplicate_does_not_resend(monkeypatch):
     first = tody_agent.direct_reply_to_guardian(
         506,
         "Direct reply once.",
-        sender={"username": "rohitsingh"},
+        sender={"username": "rohitsingh", "email": "rohitji.patna@gmail.com"},
         message_id="direct-1",
     )
     second = tody_agent.direct_reply_to_guardian(
         506,
         "Direct reply once.",
-        sender={"username": "rohitsingh"},
+        sender={"username": "rohitsingh", "email": "rohitji.patna@gmail.com"},
         message_id="direct-1",
     )
 

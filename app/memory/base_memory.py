@@ -14,6 +14,9 @@ from app.db.models import CognitiveMemory, session_scope
 
 _WORD = re.compile(r"[a-z0-9]+")
 
+_MAX_RECALL_QUERY_TOKENS = 16
+_MAX_RECALL_CANDIDATES = 2000
+
 # Function words carry no meaning for recall; without this, chat-log memories
 # full of conversational filler outrank actual knowledge on every question.
 _STOPWORDS = {
@@ -112,14 +115,34 @@ def recall(text: str, *, project: str | None = None, limit: int = 5) -> list[Mem
     q = _tokens(text) - _STOPWORDS or _tokens(text)
     if not q:
         return []
+    # Keep SQL expressions bounded for long chat messages, preferring the
+    # longest (usually most selective) terms. Candidate filtering happens in
+    # the database so an arbitrary first 500 rows cannot hide recent memories.
+    q = set(sorted(q, key=lambda token: (-len(token), token))[
+        :_MAX_RECALL_QUERY_TOKENS
+    ])
     with session_scope() as s:
         stmt = select(CognitiveMemory).where(CognitiveMemory.is_archived.is_(False))
         if project:
             stmt = stmt.where(CognitiveMemory.project == project)
-        rows = s.scalars(stmt.limit(500)).all()
+        matches = []
+        for token in sorted(q):
+            like = f"%{token}%"
+            matches.extend((
+                CognitiveMemory.title.ilike(like),
+                CognitiveMemory.content.ilike(like),
+                CognitiveMemory.related_module.ilike(like),
+            ))
+        stmt = (stmt.where(or_(*matches))
+                .order_by(CognitiveMemory.created_at.desc(),
+                          CognitiveMemory.id.desc())
+                .limit(_MAX_RECALL_CANDIDATES))
+        rows = s.scalars(stmt).all()
         scored: list[MemoryHit] = []
         for m in rows:
-            overlap = len(q & _tokens(f"{m.title} {m.content}"))
+            overlap = len(q & _tokens(
+                f"{m.title} {m.content} {m.related_module or ''}"
+            ))
             if not overlap:
                 continue
             score = overlap + (m.importance_score / 10.0)
@@ -133,7 +156,7 @@ def recall(text: str, *, project: str | None = None, limit: int = 5) -> list[Mem
                 # The question names this memory's topic — strongest signal.
                 score += 3.0
             scored.append(_hit(m, round(score, 2)))
-        scored.sort(key=lambda h: h.score, reverse=True)
+        scored.sort(key=lambda h: (h.score, h.id), reverse=True)
         return scored[:limit]
 
 

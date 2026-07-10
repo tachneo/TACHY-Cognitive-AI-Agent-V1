@@ -161,17 +161,16 @@ def test_guardian_command_bypasses_llm(monkeypatch):
     monkeypatch.setattr(tody_agent, "request_send",
                         lambda *a, **k: {"approval": {"id": 99}})
     out = tody_agent.draft_reply_to_message(
-        901, "pending", sender={"username": "rohitsingh"},
+        901, "pending",
+        sender={"username": "rohitsingh", "email": "rohitji.patna@gmail.com"},
         message_id="cmd-1", auto_send_guardian=False)
     assert "pending" in out["draft"].lower() or "approvals" in out["draft"].lower()
 
 
 def test_actions_routes_mounted():
-    from fastapi.testclient import TestClient
-
     from app.main import app
-    with TestClient(app) as client:
-        reg = client.get("/actions/registry")
-        assert reg.status_code == 200
-        names = {a["name"] for a in reg.json()["actions"]}
-        assert {"learn_topic", "send_tody_message", "create_goal"} <= names
+    from app.api.routes_actions import registry
+
+    assert "get" in app.openapi()["paths"]["/actions/registry"]
+    names = {a["name"] for a in registry()["actions"]}
+    assert {"learn_topic", "send_tody_message", "create_goal"} <= names

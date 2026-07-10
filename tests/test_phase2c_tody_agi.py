@@ -268,9 +268,11 @@ def test_reply_path_learns_and_enforces_correction(monkeypatch):
 
 
 def test_proactive_routes_mounted():
-    from fastapi.testclient import TestClient
     from app.main import app
-    with TestClient(app) as client:
-        assert client.get("/tody/proactive/queue").status_code == 200
-        # cycle is POST
-        assert client.post("/tody/proactive/cycle").status_code in (200, 503)
+    from app.api.routes_tody import proactive_cycle, proactive_queue
+
+    paths = app.openapi()["paths"]
+    assert "get" in paths["/tody/proactive/queue"]
+    assert "post" in paths["/tody/proactive/cycle"]
+    assert isinstance(proactive_queue(), dict)
+    assert isinstance(proactive_cycle(), dict)

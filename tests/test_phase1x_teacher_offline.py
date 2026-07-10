@@ -155,10 +155,8 @@ def test_extract_user_message_gets_last_occurrence():
 
 
 def test_learned_route_mounted():
-    from fastapi.testclient import TestClient
-
     from app.main import app
-    with TestClient(app) as client:
-        resp = client.get("/behavior/learned")
-    assert resp.status_code == 200
-    assert "learned_replies" in resp.json()
+    from app.api.routes_behavior import learned
+
+    assert "get" in app.openapi()["paths"]["/behavior/learned"]
+    assert "learned_replies" in learned()

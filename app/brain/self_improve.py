@@ -12,7 +12,9 @@ editing her own running brain:
                   Rohit reviews the branch and merges + redeploys himself.
 
 Guardrails: guardian-only, approval-gated, requires a clean working tree,
-kill switch SELF_IMPROVE_ENABLED, all steps audit-logged.
+kill switch SELF_IMPROVE_ENABLED, all steps audit-logged. Autonomous research
+may build and publish review branches, while production merge/restart remains
+behind SELF_IMPROVE_PRODUCTION_PROMOTION_ENABLED.
 """
 from __future__ import annotations
 
@@ -68,6 +70,9 @@ def _autonomy_gate(run, tests_passed: bool) -> tuple[bool, str]:
         return False, f"bahut bada change ({changed_lines} lines)"
     if _daily_count() >= s.self_improve_daily_cap:
         return False, "aaj ka self-improve limit poora ho gaya"
+    if not s.self_improve_production_promotion_enabled:
+        return False, ("Parent Kernel production promotion disabled hai; "
+                       "research branch ready rahegi for review")
     return True, "ok"
 
 

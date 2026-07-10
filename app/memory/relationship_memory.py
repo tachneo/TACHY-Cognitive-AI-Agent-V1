@@ -9,6 +9,7 @@ def guardian_profile() -> dict:
     settings = get_settings()
     return {
         "name": settings.guardian_name,
+        "tody_user_uuid": settings.guardian_tody_user_uuid,
         "tody_username": settings.guardian_tody_username,
         "email": settings.guardian_tody_email,
         "role": "guardian_final_authority",
@@ -17,16 +18,40 @@ def guardian_profile() -> dict:
 
 
 def is_guardian_sender(sender: dict | None) -> bool:
+    """Verify the immutable TODY identity, with a strict legacy fallback.
+
+    A configured UUID is authoritative. Username and email are accepted only
+    together when a deployment has not yet configured the UUID. Display names
+    are mutable profile data and never participate in authorization.
+    """
     if not sender:
         return False
     profile = guardian_profile()
-    username = str(sender.get("username") or sender.get("tody_username") or "").lower()
-    email = str(sender.get("email") or "").lower()
-    name = str(sender.get("name") or sender.get("display_name") or "").lower()
-    return (
-        bool(username and username == profile["tody_username"].lower())
-        or bool(email and email == profile["email"].lower())
-        or bool(name and name == profile["name"].lower())
+    expected_uuid = str(profile.get("tody_user_uuid") or "").strip().casefold()
+    sender_uuid = str(
+        sender.get("uuid")
+        or sender.get("user_uuid")
+        or sender.get("tody_user_uuid")
+        or sender.get("sender_uuid")
+        or ""
+    ).strip().casefold()
+    if expected_uuid:
+        return bool(sender_uuid and sender_uuid == expected_uuid)
+
+    if not get_settings().guardian_legacy_identity_fallback_enabled:
+        return False
+
+    expected_username = str(profile.get("tody_username") or "").strip().casefold()
+    expected_email = str(profile.get("email") or "").strip().casefold()
+    username = str(
+        sender.get("username") or sender.get("tody_username") or ""
+    ).strip().casefold()
+    email = str(sender.get("email") or "").strip().casefold()
+    return bool(
+        expected_username
+        and expected_email
+        and username == expected_username
+        and email == expected_email
     )
 
 

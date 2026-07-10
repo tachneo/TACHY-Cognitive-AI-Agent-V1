@@ -166,7 +166,10 @@ def test_batches_pending_messages_in_order(monkeypatch):
     ]}
     monkeypatch.setattr(tody_agent, "_message_items", lambda d: d["messages"])
     monkeypatch.setattr(tody_agent, "_message_body", lambda r: r["body"])
-    monkeypatch.setattr(tody_agent, "_message_sender", lambda r: {"username": "rohitsingh"})
+    monkeypatch.setattr(
+        tody_agent, "_message_sender",
+        lambda r: {"username": "rohitsingh", "email": "rohitji.patna@gmail.com"},
+    )
     monkeypatch.setattr(dialogue_memory, "was_processed", lambda *a, **k: False)
 
     cand = tody_worker._latest_unprocessed_message(135, data)

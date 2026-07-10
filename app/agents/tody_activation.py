@@ -22,11 +22,25 @@ def preflight(*, check_login: bool = False) -> dict:
         "tody_api_base_configured": bool(settings.tody_api_base.strip()),
         "tody_email_configured": bool(settings.tody_email.strip()),
         "tody_password_configured": bool(settings.tody_password.strip()),
+        "guardian_user_uuid_configured": bool(
+            settings.guardian_tody_user_uuid.strip()
+        ),
+        "guardian_legacy_fallback_enabled": (
+            settings.guardian_legacy_identity_fallback_enabled
+        ),
         "guardian_username_configured": bool(settings.guardian_tody_username.strip()),
         "guardian_email_configured": bool(settings.guardian_tody_email.strip()),
         "worker_idle": not tody_worker.status().get("locked"),
         "auto_reply_disabled": settings.tody_supervised_auto_reply is False,
     }
+    checks["guardian_identity_configured"] = bool(
+        checks["guardian_user_uuid_configured"]
+        or (
+            checks["guardian_legacy_fallback_enabled"]
+            and checks["guardian_username_configured"]
+            and checks["guardian_email_configured"]
+        )
+    )
     login = {"checked": False}
     if check_login:
         login = {"checked": True}
@@ -44,8 +58,7 @@ def preflight(*, check_login: bool = False) -> dict:
             "tody_api_base_configured",
             "tody_email_configured",
             "tody_password_configured",
-            "guardian_username_configured",
-            "guardian_email_configured",
+            "guardian_identity_configured",
             "worker_idle",
         )
     )

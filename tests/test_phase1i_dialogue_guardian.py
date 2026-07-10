@@ -1,14 +1,62 @@
 """Phase 1I — dialogue memory and verified guardian TODY conversation."""
 
 
-def test_guardian_relationship_recognizes_rohit_tody_identity():
+def test_guardian_relationship_requires_complete_legacy_identity():
     from app.memory import relationship_memory
 
-    assert relationship_memory.is_guardian_sender({"username": "rohitsingh"}) is True
+    assert relationship_memory.is_guardian_sender(
+        {"username": "rohitsingh", "email": "rohitji.patna@gmail.com"}
+    ) is True
+    assert relationship_memory.is_guardian_sender({"username": "rohitsingh"}) is False
     assert relationship_memory.is_guardian_sender(
         {"email": "rohitji.patna@gmail.com"}
-    ) is True
+    ) is False
+    assert relationship_memory.is_guardian_sender({"name": "Rohit Kumar"}) is False
+    assert relationship_memory.is_guardian_sender(
+        {
+            "username": "rohitsingh",
+            "email": "attacker@example.com",
+            "display_name": "Rohit Kumar",
+        }
+    ) is False
     assert relationship_memory.is_guardian_sender({"username": "someoneelse"}) is False
+
+
+def test_guardian_legacy_identity_is_disabled_by_default(monkeypatch):
+    from app.config import get_settings
+    from app.memory import relationship_memory
+
+    monkeypatch.setenv("GUARDIAN_TODY_USER_UUID", "")
+    monkeypatch.setenv("GUARDIAN_LEGACY_IDENTITY_FALLBACK_ENABLED", "false")
+    get_settings.cache_clear()
+
+    assert relationship_memory.is_guardian_sender({
+        "username": "rohitsingh",
+        "email": "rohitji.patna@gmail.com",
+    }) is False
+
+
+def test_guardian_relationship_prefers_configured_tody_uuid(monkeypatch):
+    from app.config import get_settings
+    from app.memory import relationship_memory
+
+    monkeypatch.setenv("GUARDIAN_TODY_USER_UUID", "guardian-uuid-123")
+    get_settings.cache_clear()
+
+    assert relationship_memory.is_guardian_sender(
+        {"uuid": "guardian-uuid-123", "username": "changed-handle"}
+    ) is True
+    assert relationship_memory.is_guardian_sender(
+        {
+            "uuid": "attacker-uuid",
+            "username": "rohitsingh",
+            "email": "rohitji.patna@gmail.com",
+            "display_name": "Rohit Kumar",
+        }
+    ) is False
+    assert relationship_memory.is_guardian_sender(
+        {"username": "rohitsingh", "email": "rohitji.patna@gmail.com"}
+    ) is False
 
 
 def test_tody_draft_records_dialogue_and_guardian_status():

@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     # Identity / guardian
     guardian_name: str = "Rohit Kumar"
     company_name: str = "TACHY EDTECH PRIVATE LIMITED"
+    guardian_tody_user_uuid: str = ""
+    guardian_legacy_identity_fallback_enabled: bool = False
     guardian_tody_username: str = "rohitsingh"
     guardian_tody_email: str = "rohitji.patna@gmail.com"
     guardian_tody_direct_reply: bool = True
@@ -141,14 +143,18 @@ class Settings(BaseSettings):
     # Self-improvement (Phase 2G) — Shree edits her OWN code on a branch, tests
     # must pass, Rohit reviews/merges. Never auto-applies to main.
     self_improve_enabled: bool = True
-    # Autonomous mode (Phase 2H): she may merge + deploy her OWN improvements
-    # WITHOUT Rohit's permission, and inform him after — but ONLY if the strict
-    # gates below all pass. Safety code always needs Rohit (see _PROTECTED).
+    # Autonomous mode (Phase 2H): she may plan, build, test, and publish her OWN
+    # improvement branches. Production promotion additionally requires the
+    # Parent Kernel gate below. Safety code always needs Rohit (see _PROTECTED).
     self_improve_autonomous: bool = False
     self_improve_max_files: int = 6        # bigger changes → need review
     self_improve_max_lines: int = 500
     self_improve_daily_cap: int = 3        # max autonomous upgrades per day
     self_improve_auto_deploy: bool = True  # restart service after a safe merge
+    # Parent Kernel authority separator. Autonomous improvement may still plan,
+    # build, test, and publish review branches while this is false, but it may
+    # not merge into the serving branch or restart production services.
+    self_improve_production_promotion_enabled: bool = False
 
     # Self-heal (Phase 2K) — a daily worker tick runs self_diagnose.auto_heal()
     # so Shree finds and fixes her own runtime bugs WITHOUT Rohit having to ask

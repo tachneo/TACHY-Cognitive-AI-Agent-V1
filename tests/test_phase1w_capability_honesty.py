@@ -90,7 +90,8 @@ def test_false_send_reply_is_rewritten(monkeypatch):
     monkeypatch.setattr(tody_agent, "request_send",
                         lambda *a, **k: {"approval": {"id": 1}})
     out = tody_agent.draft_reply_to_message(
-        135, "send same message to @TACHY", sender={"username": "rohitsingh"},
+        135, "send same message to @TACHY",
+        sender={"username": "rohitsingh", "email": "rohitji.patna@gmail.com"},
         message_id="tp-1", auto_send_guardian=False)
     draft = out["draft"].lower()
     assert "send message to @username" in draft
@@ -106,6 +107,7 @@ def test_honest_reply_passes_through(monkeypatch):
     monkeypatch.setattr(tody_agent, "request_send",
                         lambda *a, **k: {"approval": {"id": 1}})
     out = tody_agent.draft_reply_to_message(
-        135, "explain the fee module", sender={"username": "rohitsingh"},
+        135, "explain the fee module",
+        sender={"username": "rohitsingh", "email": "rohitji.patna@gmail.com"},
         message_id="tp-2", auto_send_guardian=False)
     assert out["draft"] == honest

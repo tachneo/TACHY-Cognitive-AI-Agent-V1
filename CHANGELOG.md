@@ -4,6 +4,39 @@ This file is the durable project memory for human/developer handoff. Update it
 after every phase so the next session can see what exists, what changed, what
 was verified, and what must happen next.
 
+## 2026-07-10 - Self-Module Factory Foundation: Phase 0
+
+### Completed
+
+- Added atomic, single-use approval execution states: `approved -> executing ->
+  succeeded|failed`, plus `superseded` for replaced multi-bubble approvals.
+- Blocked concurrent/repeated action and TODY-send execution with a conditional
+  database update and payload/action binding.
+- Replaced display-name authorization with immutable TODY guardian UUID
+  verification. The username/email compatibility path is disabled by default.
+- Added a Parent Kernel production-promotion gate. Autonomous self-improvement
+  can still plan, build, test, and publish review branches while direct
+  production merge/restart remains separately controlled.
+- Fixed recall so relevant recent memories are selected before applying a
+  deterministic bounded candidate limit.
+- Reworked route smoke tests to avoid the environment's broken thread-based
+  `TestClient` bridge while preserving OpenAPI route and endpoint coverage.
+
+### Verified
+
+```text
+pytest -q -p no:cacheprovider
+611 passed in 106.78s
+```
+
+Alembic was verified on a fresh SQLite database through `upgrade head`,
+`downgrade 20260709_0001`, and `upgrade head` again.
+
+### Next
+
+Add the durable module, version, evaluation, surgery, shadow, health, routing,
+self-model evidence, and task-context schema before implementing module logic.
+
 ## Current North Star
 
 Build an AGI-style cognitive operating system for TACHY/TODY/ERP work:

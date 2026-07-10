@@ -201,6 +201,9 @@ def test_autonomy_gate_blocks_big_diff(monkeypatch):
 def test_autonomy_gate_passes_safe_capability_change(monkeypatch):
     from app.brain import self_improve
     from app.coding import agent
+    monkeypatch.setenv("SELF_IMPROVE_PRODUCTION_PROMOTION_ENABLED", "true")
+    from app.config import get_settings
+    get_settings.cache_clear()
     monkeypatch.setattr(self_improve, "_git",
                         lambda *a, **k: __import__("types").SimpleNamespace(
                             returncode=0, stdout="10 insertions(+), 2 deletions(-)"))
@@ -209,6 +212,25 @@ def test_autonomy_gate_passes_safe_capability_change(monkeypatch):
                          changed_files=["app/brain/web_learning.py"])
     ok, reason = self_improve._autonomy_gate(run, tests_passed=True)
     assert ok is True
+
+
+def test_autonomy_gate_keeps_safe_change_in_research_lane_by_default(monkeypatch):
+    from app.brain import self_improve
+    from app.coding import agent
+    monkeypatch.setenv("SELF_IMPROVE_PRODUCTION_PROMOTION_ENABLED", "false")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    monkeypatch.setattr(self_improve, "_git",
+                        lambda *a, **k: __import__("types").SimpleNamespace(
+                            returncode=0, stdout="10 insertions(+), 2 deletions(-)"))
+    monkeypatch.setattr(self_improve, "_daily_count", lambda: 0)
+    run = agent.AgentRun(task="x", workdir="/x",
+                         changed_files=["app/brain/web_learning.py"])
+
+    ok, reason = self_improve._autonomy_gate(run, tests_passed=True)
+
+    assert ok is False
+    assert "Parent Kernel" in reason
 
 
 def test_autonomy_gate_blocks_when_tests_fail():

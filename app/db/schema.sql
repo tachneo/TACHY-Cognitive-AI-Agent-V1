@@ -117,9 +117,15 @@ CREATE TABLE IF NOT EXISTS cognitive_approvals (
     action VARCHAR(255) NOT NULL,
     payload TEXT NULL,
     risk_tier ENUM('low','medium','high','forbidden') DEFAULT 'high',
-    status ENUM('pending','approved','rejected') DEFAULT 'pending',
+    status ENUM(
+        'pending','approved','rejected','executing','succeeded','failed',
+        'superseded'
+    ) DEFAULT 'pending',
     requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    decided_at TIMESTAMP NULL
+    decided_at TIMESTAMP NULL,
+    execution_started_at TIMESTAMP NULL,
+    execution_completed_at TIMESTAMP NULL,
+    INDEX ix_cognitive_approvals_status (status)
 );
 
 -- ── Audit log ──────────────────────────────────────────────────

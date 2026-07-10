@@ -440,6 +440,9 @@ def _guardian_command_reply(message: str) -> str | None:
     if row is None:
         return f"I can't find approval #{approval_id}."
     if row["status"] != "pending":
+        if row["status"] in {"executing", "succeeded", "failed"}:
+            return (f"Approval #{approval_id} was already approved and is "
+                    f"{row['status']}.")
         return f"Approval #{approval_id} is already {row['status']}."
     if verb == "reject":
         approvals.respond(approval_id, approved=False)
@@ -890,26 +893,43 @@ def draft_reply_to_message(
                 except Exception:  # noqa: BLE001
                     pass
     if do_auto_send:
-        approvals.respond(queued["approval"]["id"], approved=True)
         chunks = _chat_chunks(reply)
         if len(chunks) == 1:
+            approvals.respond(queued["approval"]["id"], approved=True)
             sent = execute_send(queued["approval"]["id"], conversation_id, reply)
         else:
             # Human-feel: a long answer goes out as a few chat bubbles with a
             # typing pause, not one wall of text. Each chunk gets its own
             # payload-bound approval so the audit trail matches what was sent.
-            chunk_results = []
-            for i, chunk in enumerate(chunks):
-                if i:
-                    delay = _typing_delay_seconds(chunk)
-                    if delay > 0:
-                        time.sleep(delay)
-                appr = request_send(conversation_id, chunk)
-                approvals.respond(appr["approval"]["id"], approved=True)
-                chunk_results.append(
-                    execute_send(appr["approval"]["id"], conversation_id, chunk))
-            sent = {"sent": all(r.get("sent") for r in chunk_results),
-                    "chunks": len(chunks), "results": chunk_results}
+            original = approvals.supersede(
+                queued["approval"]["id"],
+                expected_action="send_message",
+                expected_payload=_send_payload(conversation_id, reply),
+            )
+            if not original["superseded"]:
+                sent = {
+                    "sent": False,
+                    "chunks": 0,
+                    "results": [],
+                    "reason": (
+                        "original approval could not be superseded; it is "
+                        f"{original['status']}"
+                    ),
+                }
+            else:
+                chunk_results = []
+                for i, chunk in enumerate(chunks):
+                    if i:
+                        delay = _typing_delay_seconds(chunk)
+                        if delay > 0:
+                            time.sleep(delay)
+                    appr = request_send(conversation_id, chunk)
+                    approvals.respond(appr["approval"]["id"], approved=True)
+                    chunk_results.append(execute_send(
+                        appr["approval"]["id"], conversation_id, chunk,
+                    ))
+                sent = {"sent": all(r.get("sent") for r in chunk_results),
+                        "chunks": len(chunks), "results": chunk_results}
         result["direct_send_attempted"] = True
         result["sent"] = sent.get("sent", False)
         result["send_result"] = sent
@@ -986,7 +1006,7 @@ def direct_reply_to_guardian(conversation_id: int, message: str,
 
 
 def execute_send(approval_id: int, conversation_id: int, body: str) -> dict:
-    """Send a message ONLY if the referenced approval is approved."""
+    """Consume one matching approval and send its message at most once."""
     row = approvals.get_approval(approval_id)
     if row is None:
         return {"sent": False, "reason": "approval not found"}
@@ -1002,6 +1022,15 @@ def execute_send(approval_id: int, conversation_id: int, body: str) -> dict:
             risk_tier="high",
         )
         return {"sent": False, "reason": "approval payload mismatch"}
+
+    claim = approvals.claim_execution(
+        approval_id,
+        expected_action="send_message",
+        expected_payload=expected_payload,
+    )
+    if not claim["claimed"]:
+        return {"sent": False, "reason": f"approval is {claim['status']}"}
+
     try:
         res = get_client().send_message(conversation_id, body)
         sent_id = _sent_message_id(res)
@@ -1014,14 +1043,27 @@ def execute_send(approval_id: int, conversation_id: int, body: str) -> dict:
             ),
             risk_tier="high",
         )
-        return {"sent": True, "result": res}
+        completion = approvals.complete_execution(approval_id, succeeded=True)
+        return {"sent": True, "result": res,
+                "approval_status": completion["status"]}
     except TodyError as e:
+        completion = approvals.complete_execution(approval_id, succeeded=False)
         log_event(
             "tody_send_failed",
             detail=f"approval_id={approval_id}; error={str(e)}",
             risk_tier="high",
         )
-        return {"sent": False, "error": str(e)}
+        return {"sent": False, "error": str(e),
+                "approval_status": completion["status"]}
+    except Exception as e:  # noqa: BLE001 - claimed approvals fail closed
+        completion = approvals.complete_execution(approval_id, succeeded=False)
+        log_event(
+            "tody_send_failed",
+            detail=f"approval_id={approval_id}; error={type(e).__name__}",
+            risk_tier="high",
+        )
+        return {"sent": False, "error": str(e),
+                "approval_status": completion["status"]}
 
 
 def request_post(body: str) -> dict:
@@ -1036,6 +1078,7 @@ def send_daily_growth_report(conversation_id: int) -> dict:
     report = daily_growth_report()
     profile = relationship_memory.guardian_profile()
     sender = {
+        "uuid": profile["tody_user_uuid"],
         "username": profile["tody_username"],
         "email": profile["email"],
         "name": profile["name"],
@@ -1053,6 +1096,7 @@ def send_childlike_curiosity_message(conversation_id: int) -> dict:
     curiosity = childlike_curiosity_message()
     profile = relationship_memory.guardian_profile()
     sender = {
+        "uuid": profile["tody_user_uuid"],
         "username": profile["tody_username"],
         "email": profile["email"],
         "name": profile["name"],
@@ -1091,6 +1135,7 @@ def _message_sender(row: dict) -> dict:
         if isinstance(value, dict):
             return value
     return {
+        "uuid": row.get("sender_uuid") or row.get("sender_user_uuid"),
         "username": row.get("username") or row.get("sender_username"),
         "email": row.get("email") or row.get("sender_email"),
         "name": row.get("name") or row.get("display_name") or row.get("sender_name"),

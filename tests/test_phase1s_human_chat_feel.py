@@ -165,7 +165,8 @@ def test_guardian_multichunk_send(monkeypatch):
     monkeypatch.setattr(tody_agent.get_client().__class__, "send_message",
                         fake_send_message)
     out = tody_agent.draft_reply_to_message(
-        888, "explain everything", sender={"username": "rohitsingh"},
+        888, "explain everything",
+        sender={"username": "rohitsingh", "email": "rohitji.patna@gmail.com"},
         message_id="m-chunk-1", auto_send_guardian=True)
     assert out["sent"] is True
     assert out["send_result"]["chunks"] == len(sent_bodies) >= 2
@@ -226,7 +227,7 @@ def test_guardian_direct_reply_sends_native_typing_status(monkeypatch):
     out = tody_agent.direct_reply_to_guardian(
         135,
         "Show typing while answering.",
-        sender={"username": "rohitsingh"},
+        sender={"username": "rohitsingh", "email": "rohitji.patna@gmail.com"},
         message_id="typing-native-1",
     )
 

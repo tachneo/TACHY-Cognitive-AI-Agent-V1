@@ -162,11 +162,10 @@ def test_pick_curiosity_topic_prefers_unstudied_high_interest(monkeypatch, tmp_p
 
 
 def test_learn_routes_mounted():
-    from fastapi.testclient import TestClient
-
     from app.main import app
-    with TestClient(app) as client:
-        resp = client.get("/learn/web/status")
-    assert resp.status_code == 200
-    body = resp.json()
+    from app.api.routes_learning import learning_status
+
+    operation = app.openapi()["paths"]["/learn/web/status"]
+    assert "get" in operation
+    body = learning_status()
     assert "enabled" in body and "next_topic" in body

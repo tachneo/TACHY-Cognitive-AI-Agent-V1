@@ -331,20 +331,13 @@ def test_cognitive_loop_carries_emotion_trace():
 
 
 def test_emotion_routes_mounted():
-    from fastapi.testclient import TestClient
-
     from app.main import app
-    with TestClient(app) as client:
-        state = client.get("/emotion/state")
-        assert state.status_code == 200
-        assert state.json()["emotions_total"] > 300
+    from app.api.routes_emotion import AppraiseIn, appraise, state, taxonomy
 
-        appraise = client.post("/emotion/appraise",
-                               json={"message": "thank you, all fixed!"})
-        assert appraise.status_code == 200
-        assert appraise.json()["enabled"] is True
-
-        tax = client.get("/emotion/taxonomy",
-                         params={"category": "Safety_Override"})
-        assert tax.status_code == 200
-        assert tax.json()["count"] == 10
+    paths = app.openapi()["paths"]
+    assert "get" in paths["/emotion/state"]
+    assert "post" in paths["/emotion/appraise"]
+    assert "get" in paths["/emotion/taxonomy"]
+    assert state()["emotions_total"] > 300
+    assert appraise(AppraiseIn(message="thank you, all fixed!"))["enabled"] is True
+    assert taxonomy(category="Safety_Override")["count"] == 10

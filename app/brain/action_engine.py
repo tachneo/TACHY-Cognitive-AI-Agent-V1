@@ -127,7 +127,7 @@ def propose(action: str, params: dict | None = None) -> dict:
 
 
 def execute_approved(approval_id: int) -> dict:
-    """Run a gated action after its approval was approved (payload-bound)."""
+    """Consume and run a gated action once after guardian approval."""
     row = approvals.get_approval(approval_id)
     if row is None:
         return {"executed": False, "reason": "approval not found"}
@@ -137,14 +137,49 @@ def execute_approved(approval_id: int) -> dict:
         return {"executed": False,
                 "reason": f"approval #{approval_id} is a '{row['action']}' "
                           "approval, not a brain action"}
+
+    claim = approvals.claim_execution(
+        approval_id,
+        expected_action=BRAIN_ACTION,
+        expected_payload=row["payload"],
+    )
+    if not claim["claimed"]:
+        return {"executed": False,
+                "reason": f"approval is {claim['status']}"}
+
     try:
         payload = json.loads(row["payload"] or "{}")
     except ValueError:
-        return {"executed": False, "reason": "corrupt payload"}
+        approvals.complete_execution(approval_id, succeeded=False)
+        return {"executed": False, "reason": "corrupt payload",
+                "approval_id": approval_id, "approval_status": "failed"}
     spec = REGISTRY.get(str(payload.get("action")))
     if spec is None:
-        return {"executed": False, "reason": "action no longer registered"}
-    return _execute(spec, payload.get("params") or {}, approval_id=approval_id)
+        approvals.complete_execution(approval_id, succeeded=False)
+        return {"executed": False, "reason": "action no longer registered",
+                "approval_id": approval_id, "approval_status": "failed"}
+
+    try:
+        result = _execute(
+            spec, payload.get("params") or {}, approval_id=approval_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - fail closed after claim
+        approvals.complete_execution(approval_id, succeeded=False)
+        log_event(
+            "action_execution_failed",
+            detail=(f"action={spec.name}; approval_id={approval_id}; "
+                    f"error={type(exc).__name__}"),
+            risk_tier=spec.risk_tier,
+        )
+        return {"accepted": True, "executed": False, "action": spec.name,
+                "approval_id": approval_id, "approval_status": "failed",
+                "result": {"error": f"{type(exc).__name__}: {exc}"}}
+
+    completion = approvals.complete_execution(
+        approval_id, succeeded=bool(result.get("executed")),
+    )
+    result["approval_status"] = completion["status"]
+    return result
 
 
 def _execute(spec: ActionSpec, params: dict, *, approval_id: int | None) -> dict:

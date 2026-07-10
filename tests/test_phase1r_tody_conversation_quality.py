@@ -98,7 +98,9 @@ def test_llm_error_reply_is_never_sent(monkeypatch):
     monkeypatch.setattr(tody_agent, "request_send",
                         lambda *a, **k: sent.append(a) or {"approval": {"id": 1}})
     out = tody_agent.draft_reply_to_message(
-        999, "hello", sender={"username": "rohitsingh"}, message_id="m-err-1")
+        999, "hello",
+        sender={"username": "rohitsingh", "email": "rohitji.patna@gmail.com"},
+        message_id="m-err-1")
     assert out["processed"] is False
     assert out["llm_error"] is True
     assert sent == []

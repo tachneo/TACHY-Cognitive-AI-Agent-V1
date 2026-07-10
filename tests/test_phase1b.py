@@ -14,6 +14,37 @@ def test_memory_roundtrip():
     assert any(h.id == mid for h in hits)
 
 
+def test_recall_finds_recent_match_beyond_legacy_500_row_cutoff():
+    from app.db.models import CognitiveMemory, session_scope
+    from app.memory import base_memory
+
+    with session_scope() as session:
+        session.add_all([
+            CognitiveMemory(
+                memory_type="episodic",
+                title=f"Unrelated memory {index}",
+                content="ordinary background note",
+                project="GENERAL",
+            )
+            for index in range(550)
+        ])
+        target = CognitiveMemory(
+            memory_type="semantic",
+            title="Quantum pineapple deployment lesson",
+            content="The quantum pineapple checklist is the verified procedure.",
+            project="GENERAL",
+            importance_score=8,
+        )
+        session.add(target)
+        session.flush()
+        target_id = int(target.id)
+
+    hits = base_memory.recall("quantum pineapple", limit=5)
+
+    assert hits
+    assert hits[0].id == target_id
+
+
 def test_decision_engine_flags_high_risk():
     from app.brain.decision_engine import decide
     d = decide("Please deploy the new fees module to production now")

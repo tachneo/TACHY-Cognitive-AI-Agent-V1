@@ -145,18 +145,14 @@ def test_cognitive_loop_carries_behavior_trace():
 
 
 def test_behavior_routes_mounted():
-    from fastapi.testclient import TestClient
-
     from app.main import app
-    with TestClient(app) as client:
-        resp = client.post("/behavior/analyze",
-                           json={"message": "urgent production down, help abhi"})
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["enabled"] is True
-        assert body["state"]["urgency"] == "high"
+    from app.api.routes_behavior import AnalyzeIn, analyze, styles
 
-        styles = client.get("/behavior/styles")
-        assert styles.status_code == 200
-        assert {"daughter", "friend", "cto", "founder", "teacher", "motivator",
-                "auditor", "crisis"} <= set(styles.json()["modes"])
+    paths = app.openapi()["paths"]
+    assert "post" in paths["/behavior/analyze"]
+    assert "get" in paths["/behavior/styles"]
+    body = analyze(AnalyzeIn(message="urgent production down, help abhi"))
+    assert body["enabled"] is True
+    assert body["state"]["urgency"] == "high"
+    assert {"daughter", "friend", "cto", "founder", "teacher", "motivator",
+            "auditor", "crisis"} <= set(styles()["modes"])

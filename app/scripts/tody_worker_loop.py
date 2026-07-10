@@ -236,7 +236,8 @@ def maybe_run_inner_life(*, dry_run: bool) -> dict:
     conversation_id = os.getenv("TODY_DAILY_CURIOSITY_CONVERSATION_ID", "").strip()
     if share and conversation_id.isdigit():
         profile = relationship_memory.guardian_profile()
-        sender = {"username": profile["tody_username"],
+        sender = {"uuid": profile["tody_user_uuid"],
+                  "username": profile["tody_username"],
                   "email": profile["email"], "name": profile["name"]}
         sent = tody_agent.direct_reply_to_guardian(
             int(conversation_id), share, sender=sender,

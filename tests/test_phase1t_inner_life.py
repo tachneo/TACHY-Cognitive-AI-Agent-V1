@@ -167,12 +167,10 @@ def test_kill_switch(monkeypatch):
 
 
 def test_inner_routes_mounted():
-    from fastapi.testclient import TestClient
-
     from app.main import app
-    with TestClient(app) as client:
-        resp = client.get("/inner/state")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["enabled"] is True
-        assert "recent_thoughts" in body and "mood" in body
+    from app.api.routes_inner import state
+
+    assert "get" in app.openapi()["paths"]["/inner/state"]
+    body = state()
+    assert body["enabled"] is True
+    assert "recent_thoughts" in body and "mood" in body

@@ -76,9 +76,15 @@ class CognitiveApproval(Base):
     action: Mapped[str] = mapped_column(String(255))
     payload: Mapped[str | None] = mapped_column(Text, nullable=True)
     risk_tier: Mapped[str] = mapped_column(String(16), default="high")
-    status: Mapped[str] = mapped_column(String(16), default="pending")
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     requested_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
     decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    execution_started_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime, nullable=True,
+    )
+    execution_completed_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime, nullable=True,
+    )
 
 
 class CognitiveDecision(Base):
