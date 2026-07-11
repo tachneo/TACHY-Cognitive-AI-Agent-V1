@@ -34,3 +34,8 @@ def test_vision_is_honest_when_disabled():
     result = analyze_image(b"not-an-image", "image/jpeg")
     assert result["ok"] is False
     assert result["reason"] == "vision_disabled"
+
+
+def test_vision_defaults_to_qwen_multimodal_model():
+    from app.config import get_settings
+    assert get_settings().tody_vision_model == "qwen/qwen3.5-397b-a17b"

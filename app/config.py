@@ -78,7 +78,9 @@ class Settings(BaseSettings):
     vision_nvidia_key: str = ""
     tody_vision_enabled: bool = False
     tody_vision_max_bytes: int = 10_000_000
-    tody_vision_model: str = "minimaxai/minimax-m3"
+    # Qwen3.5-397B-A17B is NVIDIA's multimodal Qwen VLM; send image_url
+    # content blocks, never the raw credential or image bytes to logs.
+    tody_vision_model: str = "qwen/qwen3.5-397b-a17b"
     tody_media_allowed_hosts: str = "api.tody.in,chat.tody.in,chat.tachy.in"
 
     # GitHub self-lookup (Phase 2C-selfverify F2) — read-only PAT so Shree can

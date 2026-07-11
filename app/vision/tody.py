@@ -18,7 +18,7 @@ def analyze_image(image: bytes, mime_type: str, prompt: str = "Describe this ima
     data_url = f"data:{mime_type};base64,{base64.b64encode(image).decode('ascii')}"
     payload = {"model": settings.tody_vision_model, "messages": [{"role": "user", "content": [
         {"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": data_url}}
-    ]}], "max_tokens": 1200}
+    ]}], "max_tokens": 1200, "temperature": 0.2, "top_p": 0.95, "stream": False}
     response = httpx.post(settings.nvidia_base_url.rstrip('/') + '/chat/completions',
                           headers={"Authorization": f"Bearer {key}", "content-type": "application/json"},
                           json=payload, timeout=90)
