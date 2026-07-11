@@ -1987,3 +1987,9 @@ Recommended order:
 - Added AST/import/interface evaluation that blocks forbidden imports/calls and requires `health`, `process`, and `fallback` contracts.
 - Added factory tests covering no-evidence behavior and sandbox generation/validation.
 - Verification: factory runtime tests pass (2 tests).
+## 2026-07-11 — Phase 5: Shadow, Canary, and Surgery Runtime
+
+- Added shadow execution metadata with explicit `user_visible: false` output boundary.
+- Added 5/25/100 canary validation and automatic rollback predicates for safety, privacy, health, latency/error, and severe correction signals.
+- Added surgery-session lifecycle helpers for isolation, preflight, shadow, canary, promotion, and rollback while preserving Parent Kernel availability.
+- Verification: shadow/canary/surgery tests pass (3 tests).
