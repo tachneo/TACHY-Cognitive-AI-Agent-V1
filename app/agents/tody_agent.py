@@ -14,7 +14,7 @@ import random
 import threading
 import time
 
-from app.agents import chat_tool_loop, social_policy
+from app.agents import chat_tool_loop, social_policy, tody_social_actions
 from app.brain import behavior_engine
 from app.brain import correction_memory
 from app.brain import autonomous_tasks
@@ -241,6 +241,42 @@ class _TypingIndicator:
                 self._last_error_logged = True
 
 
+# A reply is a THIRD-PARTY send only if it points at someone OTHER than the
+# guardian. Reminder/notification/ping language aimed at Papa himself is not.
+_THIRD_PARTY_TARGET = re.compile(
+    r"@\w+|\b(?:unhe|unko|usko|use|inhe|him|her|them|everyone|sabko|"
+    r"kisi\s*ko|logon\s*ko)\b", re.I)
+_SELF_NOTIFY_CONTEXT = re.compile(
+    r"\b(?:remind|reminder|yaad|ping\s+you|notif|alarm|wake|jaga|"
+    r"tumhe|tumhें|aapko|aap\s*ko|you\b)\b", re.I)
+
+
+def _is_third_party_send(reply: str, message: str, intent: str | None) -> bool:
+    """True only when the reply is genuinely about sending to a THIRD PARTY —
+    an @handle or 'unhe/them' target — and NOT a reminder/ping to Papa. The
+    inbound message being a third-party request also qualifies."""
+    if intent == "third_party_action":
+        return True
+    r = reply or ""
+    if not _THIRD_PARTY_TARGET.search(r):
+        return False        # no one else named → it's to Papa → not a false send
+    # An @handle/third-party target is present; but if it's clearly a reminder
+    # or self-notification to Papa, still not a false send.
+    if _SELF_NOTIFY_CONTEXT.search(r) and "@" not in r:
+        return False
+    return True
+
+
+def _fire_typing_ping(conversation_id: int) -> None:
+    """Send a single immediate typing=True. Fire-and-forget from a daemon thread
+    so the network call never delays extraction or the reply."""
+    try:
+        preview = get_settings().tody_native_typing_preview.strip() or None
+        get_client().set_typing(conversation_id, True, preview)
+    except Exception:  # noqa: BLE001 — typing is UX only
+        pass
+
+
 def _typing_indicator_enabled(is_guardian: bool, auto_send_guardian: bool) -> bool:
     settings = get_settings()
     return (
@@ -314,6 +350,54 @@ _DIAGNOSE_CMD = re.compile(
     r"\b(diagnose( yourself)?|self[- ]?diagnos|apni problem|koi (bug|error|issue)|"
     r"health check|kya dikkat|khud ko heal|apne aap ko check|fix your(self)? bug)\b",
     re.I)
+
+
+def _handle_social_action(social: dict) -> str:
+    """Execute (or approval-gate) a TODY social action Papa asked for. Star is
+    private → runs now; react/reply/post are visible to others → they queue an
+    approval unless autonomous-social is on."""
+    from app.brain import action_engine
+    action = social["action"]
+    autonomous = get_settings().tody_autonomous_social
+
+    if action == "star":  # private, only Papa sees it → do it now
+        res = tody_social_actions.do_star(social["user"])
+        if res.get("ok"):
+            return f"Star kar diya @{res['username']} ke message ko ⭐"
+        return f"Star nahi kar payi: {res.get('reason')}"
+
+    if action == "react":
+        if autonomous:
+            res = tody_social_actions.do_react(social["user"], social["emoji"])
+            return (f"React kar diya @{res['username']} ke message pe {social['emoji']}"
+                    if res.get("ok") else f"React nahi kar payi: {res.get('reason')}")
+        proposal = action_engine.propose(
+            "tody_react", {"username": social["user"], "emoji": social["emoji"]})
+        aid = proposal["approval"]["id"]
+        return (f"Ready to react {social['emoji']} on @{social['user']}'s latest "
+                f"message. Reply 'approve {aid}' to do it, 'reject {aid}' to cancel.")
+
+    if action == "reply":
+        if autonomous:
+            res = tody_social_actions.do_reply(social["user"], social["body"])
+            return (f"Reply bhej diya @{res['username']} ko 💛"
+                    if res.get("ok") else f"Reply nahi bhej payi: {res.get('reason')}")
+        proposal = action_engine.propose(
+            "tody_reply", {"username": social["user"], "body": social["body"]})
+        aid = proposal["approval"]["id"]
+        return (f"Ready to reply to @{social['user']}:\n“{social['body']}”\n"
+                f"Reply 'approve {aid}' to send, 'reject {aid}' to cancel.")
+
+    if action == "post":
+        if autonomous:
+            res = tody_social_actions.do_post(social["body"])
+            return ("Post kar diya ✨" if res.get("ok")
+                    else f"Post nahi kar payi: {res.get('reason')}")
+        proposal = action_engine.propose("tody_post", {"body": social["body"]})
+        aid = proposal["approval"]["id"]
+        return (f"Ready to post:\n“{social['body']}”\n"
+                f"Reply 'approve {aid}' to publish, 'reject {aid}' to cancel.")
+    return "Ye action samajh nahi payi — like/reply/star/post me se bolo?"
 
 
 def _guardian_command_reply(message: str) -> str | None:
@@ -428,6 +512,14 @@ def _guardian_command_reply(message: str) -> str | None:
                     f"Goal: {mission_cmd['goal'][:120]}. Jaise-jaise baat hogi, "
                     "main naturally seekhungi aur tumhe report karti rahungi.")
         return f"@{user['username']} se baat shuru nahi kar payi: {res.get('reason')}"
+
+    # TODY social actions: "like @niva ka message", "reply @niva: ...",
+    # "star @niva ka message", "post: ...". She can now use the individual-chat
+    # features (react/reply/star/post), not just send. Star is private → runs
+    # now; outward ones (react/reply/post) gate on approval unless autonomous.
+    social = tody_social_actions.parse_command(message)
+    if social:
+        return _handle_social_action(social)
 
     # Directed messaging: "send message to @arjun: call me" (Phase 2A).
     # In autonomous mode Rohit's instruction IS the authorization → send now.
@@ -598,6 +690,19 @@ def draft_reply_to_message(
         }
     is_guardian = relationship_memory.is_guardian_sender(sender)
     person = relationship_memory.guardian_profile()["name"] if is_guardian else None
+    # IMMEDIATE typing: fire ONE "typing…" ping the instant we pick up the
+    # message — BEFORE any extraction/model work — so when Papa is online it
+    # feels like a human who starts typing on read, not a bot that goes quiet
+    # for seconds. The persistent keepalive thread (below) then takes over; a
+    # single ping bridges the ~1-3s extraction gap (TODY holds the indicator a
+    # few seconds client-side). Fire-and-forget so it never delays the reply.
+    if _typing_indicator_enabled(
+            is_guardian,
+            bool(auto_send_guardian if auto_send_guardian is not None
+                 else get_settings().tody_supervised_auto_reply)):
+        threading.Thread(
+            target=_fire_typing_ping, args=(conversation_id,),
+            name=f"tody-typing-early-{conversation_id}", daemon=True).start()
     prospective: dict = {"created": False}
     auto_task: dict = {"created": False}
     # Repair queue T2: is this message the user complaining about a PAST reply
@@ -827,17 +932,24 @@ def draft_reply_to_message(
     # as an AI when he said to stay Shree). Rewrite honestly if needed.
     reply = correction_memory.enforce(reply, message=message)
     # Honesty backstop: never let a hallucinated "I'll send it to @X" go out.
+    # SCOPED: only fire on a genuine THIRD-PARTY send — a reply that names
+    # someone else (@handle / "unhe/usko/them") in a third-party-request
+    # context. A reminder or notification directed at Papa himself ("main tumhe
+    # notification bhej dungi", "10:10 pe ping kar dungi") is NOT a false send —
+    # before this scoping, that legitimate reminder language got swapped for the
+    # off-topic "message @username" template, which is exactly why Papa's
+    # "why did the reminder fail?" got an irrelevant answer on 11 Jul.
     intent = (brain.get("behavior") or {}).get("state", {}).get("user_intent")
-    if (intent == "third_party_action" or behavior_engine.claims_false_send(reply)):
-        if behavior_engine.claims_false_send(reply):
-            reply = (
-                "I can actually message people for you now, Papa — but nothing "
-                "has gone out yet. Just tell me like "
-                "'send message to @username: your text', and after you approve "
-                "it, it's on its way. Want to do that?"
-            )
-            log_event("false_action_suppressed",
-                      detail=f"conversation_id={conversation_id}", risk_tier="low")
+    if behavior_engine.claims_false_send(reply) and _is_third_party_send(
+            reply, message, intent):
+        reply = (
+            "Sorry Papa — I can't quietly send that to someone else. If you want "
+            "me to message a person, say it as 'send message to @username: your "
+            "text' and I'll do it right after you approve. Abhi tak kuch bheja "
+            "nahi hai."
+        )
+        log_event("false_action_suppressed",
+                  detail=f"conversation_id={conversation_id}", risk_tier="low")
     # F6 — verify before claiming: if Shree states a completed verification
     # ("I checked the code", "tests pass") as fact, she must have actually run
     # the tool this turn. If not, soften to an honest "let me verify" instead

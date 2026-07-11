@@ -73,10 +73,116 @@ def _utcnow_naive() -> dt.datetime:
 
 def _light_complete(prompt: str) -> str:
     """Call the light pool model. Wrapped so tests can monkeypatch it without
-    touching the provider stack."""
+    touching the provider stack. max_tokens raised to 512 because gemma with
+    enable_thinking spends tokens on reasoning first — at 200 the JSON answer
+    was starved and came back EMPTY, so every reminder silently failed."""
     from app.llm.provider import get_light_provider
-    return (get_light_provider().complete(_SYSTEM, prompt, max_tokens=200)
+    return (get_light_provider().complete(_SYSTEM, prompt, max_tokens=512)
             or "").strip()
+
+
+# ── Deterministic time parser (PRIMARY path) ─────────────────────────
+# A reminder is a bounded, structured task ("10:10 am", "shaam 5 baje", "10
+# minute baad", "kal subah"). It must NOT depend on a flaky 26B model that
+# returns empty — an assistant that can't reliably set an alarm isn't credible.
+# This parser handles the common shapes deterministically; the light model is
+# only a fallback for genuinely fuzzy phrasing.
+
+_HINGLISH_PARTS = {  # part-of-day → default hour (IST, 24h)
+    "subah": 8, "morning": 8, "savere": 8, "tadke": 6,
+    "dopahar": 13, "din": 13, "noon": 12, "afternoon": 15,
+    "shaam": 17, "sham": 17, "evening": 18,
+    "raat": 21, "night": 21, "tonight": 21,
+}
+
+# "at 10:10 am", "10:10am", "5 pm", "17:30", "10:35 baje", "5 baje"
+_RX_CLOCK = re.compile(
+    r"(?:^|\D)(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?|am|pm|baje|bje)?",
+    re.I)
+# "in 10 minutes", "10 min baad", "2 ghante baad", "after 30 minutes"
+_RX_REL = re.compile(
+    r"(?:in|after|baad(?:\s+mein)?|thodi\s+der|within)?\s*(\d{1,3})\s*"
+    r"(min(?:ute)?s?|m|ghant[ae]|hour?s?|hr?s?|h)\b", re.I)
+_RX_REL_SOFT = re.compile(r"thodi\s+der\s+(?:mein|baad)|kuch\s+der", re.I)
+
+
+def _mk_due(hh: int, mm: int, now_ist: dt.datetime,
+            day_offset: int = 0) -> dt.datetime | None:
+    """Build a UTC-naive due time from an IST wall clock; if it's already past
+    today (and no explicit day given), roll to tomorrow."""
+    if not (0 <= hh < 24 and 0 <= mm < 60):
+        return None
+    due = now_ist.replace(hour=hh, minute=mm, second=0, microsecond=0)
+    due += dt.timedelta(days=day_offset)
+    if due <= now_ist and day_offset == 0:
+        due += dt.timedelta(days=1)
+    return due.astimezone(dt.UTC).replace(tzinfo=None)
+
+
+def _deterministic_parse(message: str,
+                         now_ist: dt.datetime | None = None) -> dt.datetime | None:
+    """Return the due time (UTC-naive) from a reminder message, or None. Tries
+    relative offsets first (unambiguous), then absolute clock + part-of-day."""
+    now_ist = now_ist or _now_ist()
+    low = (message or "").lower()
+
+    # 1. Relative: "10 minute baad", "in 2 hours", "30 min"
+    m = _RX_REL.search(low)
+    if m:
+        qty = int(m.group(1))
+        unit = m.group(2)
+        minutes = qty * 60 if unit.startswith(("gh", "hour", "hr", "h")) else qty
+        if 1 <= minutes <= _MAX_DUE_AHEAD_DAYS * 24 * 60:
+            return (now_ist + dt.timedelta(minutes=minutes)).astimezone(
+                dt.UTC).replace(tzinfo=None)
+    if _RX_REL_SOFT.search(low):  # "thodi der baad" → ~15 min
+        return (now_ist + dt.timedelta(minutes=15)).astimezone(
+            dt.UTC).replace(tzinfo=None)
+
+    # Day offset from "kal"/"tomorrow"/"parson"/"aaj"/"today"
+    day_offset = 0
+    if "parson" in low:
+        day_offset = 2
+    elif "kal" in low or "tomorrow" in low:
+        day_offset = 1
+
+    # 2. Absolute clock: "10:10 am", "5 pm", "17:30", "10:35", "5 baje"
+    m = _RX_CLOCK.search(low)
+    if m:
+        hh = int(m.group(1))
+        mm = int(m.group(2) or 0)
+        mer = (m.group(3) or "").replace(".", "").lower()
+        if mer == "pm" and hh < 12:
+            hh += 12
+        elif mer == "am" and hh == 12:
+            hh = 0
+        elif mer in ("baje", "bje") and hh <= 12:
+            # bare "5 baje": use the part-of-day if present, else assume the
+            # next occurrence (daytime bias handled by _mk_due roll-forward).
+            for part, ph in _HINGLISH_PARTS.items():
+                if part in low:
+                    if ph >= 12 and hh < 12:
+                        hh += 12
+                    break
+        due = _mk_due(hh, mm, now_ist, day_offset)
+        if due is not None:
+            return due
+
+    # 3. Part-of-day only ("kal subah", "shaam ko yaad dilana"): the WEAKEST
+    # signal — a bare "morning"/"shaam" is usually a greeting, not a reminder
+    # ("good morning shree" must NOT create an 8 AM alarm). Require an explicit
+    # reminder intent word before trusting a part-of-day alone.
+    if _REMINDER_INTENT.search(low):
+        for part, ph in _HINGLISH_PARTS.items():
+            if part in low:
+                return _mk_due(ph, 0, now_ist, day_offset)
+    return None
+
+
+# Explicit "please remind/wake me" intent — gates the weak part-of-day path.
+_REMINDER_INTENT = re.compile(
+    r"\b(?:remind|reminder|yaad|wake|jaga|alarm|ping\s+me|set\s+a|"
+    r"schedule|notify\s+me|batana|bata\s+dena)\b", re.I)
 
 
 def _extract_json(text: str) -> dict | None:
@@ -107,6 +213,31 @@ def _has_future_cue(message: str) -> bool:
     return any(cue in lower for cue in _FUTURE_CUES)
 
 
+# Strip the scheduling scaffolding so the fired reminder reads like what the
+# task IS, not the raw request. "mujhe 10:35 ko remind kar ki nahane jana hai"
+# → "nahane jana hai". Keeps it human when it pings.
+_REMINDER_CONNECTOR = re.compile(r"\b(?:ki|that|to)\b\s+", re.I)
+# Time/scheduling tokens to scrub from the reminder body.
+_TIME_NOISE = re.compile(
+    r"\b(?:remind(?:er)?(?:\s+me)?|yaad\s+dila(?:na|o|do)?|mujhe|please|pls|"
+    r"at|ko|pe|par|by|around|kar[oi]?|do|dena)\b|"
+    r"\b\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?|baje|bje)?\b|"
+    r"\b(?:kal|parson|aaj|tomorrow|today|subah|shaam|sham|raat|dopahar|"
+    r"morning|evening|night|noon|\d+\s*(?:min(?:ute)?s?|ghant[ae]|hours?|hrs?))\b",
+    re.I)
+
+
+def _reminder_text(message: str) -> str:
+    msg = (message or "").strip()
+    # Prefer the task clause after the last "to/ki/that" connector.
+    parts = _REMINDER_CONNECTOR.split(msg)
+    tail = parts[-1].strip() if len(parts) > 1 else msg
+    # Scrub leftover time/scheduling noise, collapse whitespace.
+    cleaned = re.sub(r"\s{2,}", " ", _TIME_NOISE.sub("", tail)).strip(" ,.-")
+    body = cleaned if len(cleaned) >= 3 else (tail if len(tail) >= 3 else msg)
+    return f"Papa, reminder: {body[:200]}"
+
+
 def extract(message: str, conversation_id: int | str, *,
             source_message_id: int | str | None = None,
             person: str | None = None,
@@ -125,35 +256,47 @@ def extract(message: str, conversation_id: int | str, *,
     if not msg or len(msg) > 1000 or not _has_future_cue(msg):
         return {"created": False, "reason": "no future cue"}
 
-    prompt = (
-        f"Current IST time: {_now_ist().strftime('%Y-%m-%d %H:%M, %A')}\n"
-        f"Inbound message:\n{msg[:600]}\n\n"
-        "JSON:"
-    )
-    try:
-        raw = _light_complete(prompt)
-    except Exception as exc:  # noqa: BLE001 — never break a reply over extraction
-        log_event("prospective_memory_extract_error",
-                  detail=f"conv={conversation_id}; {type(exc).__name__}")
-        return {"created": False, "reason": "light_model_error"}
-
-    data = _extract_json(raw)
-    if not data or data.get("due_at") in (None, "", "null"):
-        return {"created": False, "reason": "no_commitment"}
-    due_utc = _parse_due_ist(str(data["due_at"]))
-    if due_utc is None:
-        return {"created": False, "reason": "bad_due_at"}
-    # Sanity: reject absurd horizons or past times (a reminder for 1999 is junk).
     now = _utcnow_naive()
+    due_utc: dt.datetime | None = None
+    text = ""
+    actor = "deterministic"
+
+    # PRIMARY: deterministic parser. Reliable, instant, no model call — this is
+    # what a reminder deserves. Only if it can't find a time do we ask gemma.
+    due_utc = _deterministic_parse(msg)
+    if due_utc is not None:
+        text = _reminder_text(msg)
+
+    # FALLBACK: fuzzy phrasing the parser missed → the light model.
+    if due_utc is None:
+        prompt = (
+            f"Current IST time: {_now_ist().strftime('%Y-%m-%d %H:%M, %A')}\n"
+            f"Inbound message:\n{msg[:600]}\n\n"
+            "JSON:"
+        )
+        try:
+            raw = _light_complete(prompt)
+        except Exception as exc:  # noqa: BLE001 — never break a reply over extraction
+            log_event("prospective_memory_extract_error",
+                      detail=f"conv={conversation_id}; {type(exc).__name__}")
+            return {"created": False, "reason": "light_model_error"}
+        data = _extract_json(raw)
+        if not data or data.get("due_at") in (None, "", "null"):
+            return {"created": False, "reason": "no_commitment"}
+        if float(data.get("confidence") or 0.5) < 0.5:
+            return {"created": False, "reason": "low_confidence"}
+        due_utc = _parse_due_ist(str(data["due_at"]))
+        if due_utc is None:
+            return {"created": False, "reason": "bad_due_at"}
+        text = str(data.get("text") or msg[:160]).strip()[:600]
+        actor = "gemma-intent"
+
+    # Sanity: reject absurd horizons or past times (a reminder for 1999 is junk).
     if due_utc < now - dt.timedelta(minutes=5):
         return {"created": False, "reason": "due_in_past"}
     if due_utc > now + dt.timedelta(days=_MAX_DUE_AHEAD_DAYS):
         return {"created": False, "reason": "due_too_far"}
-
-    text = str(data.get("text") or msg[:160]).strip()[:600]
-    confidence = float(data.get("confidence") or 0.5)
-    if confidence < 0.5:
-        return {"created": False, "reason": "low_confidence"}
+    text = (text or msg[:160]).strip()[:600]
 
     try:
         with session_scope() as sess:
@@ -165,7 +308,7 @@ def extract(message: str, conversation_id: int | str, *,
                 source_text=msg[:400],
                 person=person,
                 status="pending",
-                actor="gemma-intent",
+                actor=actor,
             )
             sess.add(row)
             sess.flush()

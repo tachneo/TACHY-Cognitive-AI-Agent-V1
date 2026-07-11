@@ -75,6 +75,23 @@ def _run_send_direct_message(params: dict) -> dict:
                                       str(params["body"]))
 
 
+def _run_tody_react(params: dict) -> dict:
+    from app.agents import tody_social_actions
+    return tody_social_actions.do_react(str(params["username"]),
+                                        str(params.get("emoji") or "❤️"))
+
+
+def _run_tody_reply(params: dict) -> dict:
+    from app.agents import tody_social_actions
+    return tody_social_actions.do_reply(str(params["username"]),
+                                        str(params["body"]))
+
+
+def _run_tody_post(params: dict) -> dict:
+    from app.agents import tody_social_actions
+    return tody_social_actions.do_post(str(params["body"]))
+
+
 REGISTRY: dict[str, ActionSpec] = {
     spec.name: spec for spec in (
         ActionSpec("learn_topic", "low",
@@ -96,6 +113,15 @@ REGISTRY: dict[str, ActionSpec] = {
         ActionSpec("send_direct_message", "high",
                    "Message another TODY user by @username (resolve → DM → "
                    "send; approval-gated)", _run_send_direct_message),
+        ActionSpec("tody_react", "medium",
+                   "React/like a TODY user's latest message (approval-gated)",
+                   _run_tody_react),
+        ActionSpec("tody_reply", "high",
+                   "Reply to a TODY user's latest message (approval-gated)",
+                   _run_tody_reply),
+        ActionSpec("tody_post", "high",
+                   "Create a public TODY post/status (approval-gated)",
+                   _run_tody_post),
     )
 }
 

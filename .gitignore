@@ -11,3 +11,4 @@ storage/*.db
 storage/*.sqlite*
 storage/logs/*.json
 storage/logs/*.state
+.env.bak.*
