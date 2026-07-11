@@ -156,6 +156,20 @@ class Settings(BaseSettings):
     # not merge into the serving branch or restart production services.
     self_improve_production_promotion_enabled: bool = False
 
+    # Child-module evolution control plane. Child modules may evolve inside
+    # their sandbox, while Parent Kernel authority remains guardian-gated.
+    self_module_factory_enabled: bool = False
+    brain_surgery_enabled: bool = False
+    self_module_auto_propose_enabled: bool = False
+    self_module_canary_enabled: bool = False
+    self_module_require_approval: bool = True
+    self_module_shadow_enabled: bool = True
+    self_module_allow_core_patch: bool = False
+    self_module_sandbox_root: str = "app/sandbox"
+    self_module_min_score_low: int = 85
+    self_module_min_score_medium: int = 92
+    self_module_min_score_high: int = 97
+
     # Self-heal (Phase 2K) — a daily worker tick runs self_diagnose.auto_heal()
     # so Shree finds and fixes her own runtime bugs WITHOUT Rohit having to ask
     # "diagnose". She still goes through every 2H safety gate (branch + tests +

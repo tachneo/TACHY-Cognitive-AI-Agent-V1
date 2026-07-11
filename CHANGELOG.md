@@ -1968,3 +1968,9 @@ Recommended order:
 - Added pinned runtime and development lock manifests and PyYAML as an explicit dependency.
 - Added schema contract tests and expanded deployment checks to cover all control-plane tables.
 - Verification: focused Phase 1 schema/deployment tests pass (13 tests); fresh Alembic upgrade reaches head and matches ORM columns. The complete suite was started but the runner stopped emitting output at 11%; a clean full-suite rerun remains a release gate before production migration.
+## 2026-07-11 — Phase 2: Parent Kernel Module Contracts
+
+- Added `capability_registry` with immutable forbidden actions, protected core/safety paths, sandbox/network scope checks, and approval classification for elevated actions.
+- Added transactional `module_registry` operations for registration, duplicate prevention, status changes, active-version approval, fallback lookup, policy hashing, and control-log audit events.
+- Added safe-default feature flags for child-module factory, shadow/canary, surgery, and core-patch promotion.
+- Verification: capability and registry tests pass; child modules cannot register as Parent Brain, safety policy, or approval authority.
