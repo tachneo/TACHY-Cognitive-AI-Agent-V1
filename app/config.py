@@ -122,6 +122,11 @@ class Settings(BaseSettings):
     tody_typing_delay_min: float = 0.7
     tody_typing_delay_max: float = 3.0
     tody_typing_chars_per_second: float = 120.0
+    tody_human_typing_enabled: bool = False
+    tody_human_typing_cps_min: float = 28.0
+    tody_human_typing_cps_max: float = 58.0
+    tody_human_typing_max_delay: float = 8.0
+    tody_human_typing_pause_probability: float = 0.08
     tody_native_typing_enabled: bool = True
     tody_native_typing_keepalive_seconds: float = 2.0
     tody_native_typing_preview: str = ""

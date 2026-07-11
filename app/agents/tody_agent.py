@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import random
 import threading
 import time
 
@@ -169,6 +170,23 @@ def _typing_delay_seconds(chunk: str) -> float:
     max_delay = max(min_delay, _float_env("TODY_TYPING_DELAY_MAX", 3.0))
     chars_per_second = max(20.0, _float_env("TODY_TYPING_CHARS_PER_SECOND", 120.0))
     return min(max_delay, max(min_delay, len(chunk) / chars_per_second))
+
+
+def _human_typing_delay_seconds(text: str) -> float:
+    """Approximate human composition time with a bounded random cadence."""
+    settings = get_settings()
+    if not settings.tody_human_typing_enabled:
+        return 0.0
+    clean = (text or "").strip()
+    if not clean:
+        return 0.0
+    low = max(10.0, settings.tody_human_typing_cps_min)
+    high = max(low, settings.tody_human_typing_cps_max)
+    delay = len(clean) / random.uniform(low, high)
+    delay += min(clean.count("\n\n") * 0.55, 2.0)
+    if random.random() < max(0.0, min(1.0, settings.tody_human_typing_pause_probability)):
+        delay += random.uniform(0.35, 1.1)
+    return min(max(0.2, delay), max(0.5, settings.tody_human_typing_max_delay))
 
 
 class _TypingIndicator:
@@ -924,6 +942,9 @@ def draft_reply_to_message(
         chunks = _chat_chunks(reply)
         if len(chunks) == 1:
             approvals.respond(queued["approval"]["id"], approved=True)
+            delay = _human_typing_delay_seconds(chunks[0])
+            if delay > 0:
+                time.sleep(delay)
             sent = execute_send(queued["approval"]["id"], conversation_id, reply)
         else:
             # Human-feel: a long answer goes out as a few chat bubbles with a
@@ -947,10 +968,10 @@ def draft_reply_to_message(
             else:
                 chunk_results = []
                 for i, chunk in enumerate(chunks):
-                    if i:
-                        delay = _typing_delay_seconds(chunk)
-                        if delay > 0:
-                            time.sleep(delay)
+                    delay = (_human_typing_delay_seconds(chunk) if i == 0
+                             else _typing_delay_seconds(chunk))
+                    if delay > 0:
+                        time.sleep(delay)
                     appr = request_send(conversation_id, chunk)
                     approvals.respond(appr["approval"]["id"], approved=True)
                     chunk_results.append(execute_send(

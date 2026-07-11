@@ -2019,3 +2019,9 @@ Recommended order:
 - Safety and approval remain mandatory authority modules; forbidden requests are blocked and high-risk requests require approval.
 - Integrated route context into the cognitive loop with a stable policy hash for auditability.
 - Verification: Parent Kernel routing and regression tests pass (38 focused tests).
+## 2026-07-11 — Natural TODY Typing Cadence
+
+- Added bounded human-like composition delays with configurable character rate, paragraph pauses, and small jitter.
+- Preserved native typing indicators and chunk pacing; no generated text is logged as a typing preview.
+- Feature is explicitly configurable and capped to prevent worker stalls.
+- Verification: 24 typing/chat capability tests pass.
