@@ -64,3 +64,62 @@ def validate_module(proposal_id: int, version: str = "0.1.0") -> dict:
     with session_scope() as db:
         row = db.get(SelfModuleProposal, proposal_id); row.evaluation_score = report["score"]; row.validation_report_json = json.dumps(report); row.status = "tested" if report["passed"] else "failed_validation"
     return report
+
+
+def register_shadow(proposal_id: int, version: str = "0.1.0") -> dict:
+    """Complete the loop: register a VALIDATED proposal as a child module in
+    SHADOW status. The seam that was missing — the factory produced proposals
+    with allowed_actions_json / blocked_actions_json (JSON columns) but
+    module_registry.register_module reads the list keys allowed_actions /
+    blocked_actions, so a direct hand-off silently dropped the blocklist and
+    the fail-closed gate rejected every module. This bridges the two shapes.
+
+    Shadow means observe-only: no live import, no user-facing effect. Activation
+    past shadow still requires Rohit (self_module_require_approval) — this never
+    promotes to canary or active on its own."""
+    if not get_settings().self_module_factory_enabled:
+        return {"ok": False, "reason": "factory disabled"}
+    if not get_settings().self_module_shadow_enabled:
+        return {"ok": False, "reason": "shadow disabled"}
+    p = _proposal(proposal_id)
+    if not p:
+        return {"ok": False, "reason": "proposal not found"}
+    if p["status"] != "tested":
+        return {"ok": False, "reason": f"proposal not validated (status={p['status']})"}
+
+    from app.brain import module_registry
+    registry_proposal = {
+        "module_key": p["module_key"],
+        "module_name": p["module_name"],
+        "module_type": p["module_type"] or "evaluator",
+        "risk_level": p["risk_level"] or "low",
+        "version": version,
+        "sandbox_path": str(_root() / "modules" / p["module_key"] / version),
+        "allowed_actions": json.loads(p["allowed_actions_json"] or "[]"),
+        "blocked_actions": json.loads(p["blocked_actions_json"] or "[]"),
+        "fallback_module_key": p["fallback_module_key"] or "offline_brain",
+    }
+    try:
+        reg = module_registry.register_module(registry_proposal, created_by="shree")
+    except ValueError as exc:
+        # Already registered → just move it to shadow; any other error is real.
+        if "already registered" not in str(exc):
+            return {"ok": False, "reason": str(exc)}
+        reg = {"module_key": p["module_key"]}
+    module_registry.update_module_status(
+        p["module_key"], "shadow",
+        "validated; observing in shadow, awaiting Rohit approval to activate",
+        approved_by=None)
+    # Propagate the eval score onto the module so the autonomous lifecycle's
+    # score gate can read it (without this it saw None→0 and held forever).
+    from app.db.models import SelfModule
+    with session_scope() as db:
+        row = db.get(SelfModuleProposal, proposal_id)
+        row.status = "shadow"
+        mod = db.query(SelfModule).filter(
+            SelfModule.module_key == p["module_key"]).first()
+        if mod is not None:
+            mod.last_eval_score = float(p.get("evaluation_score") or 0)
+    return {"ok": True, "module_key": p["module_key"], "status": "shadow",
+            "requires_approval": get_settings().self_module_require_approval,
+            "registry": reg}

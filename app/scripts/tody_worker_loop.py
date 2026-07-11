@@ -264,6 +264,21 @@ def maybe_run_autonomous_tasks(*, dry_run: bool) -> dict:
     return {"autonomous_tasks": out}
 
 
+def maybe_advance_modules(*, dry_run: bool) -> dict:
+    """Advance Shree's child-module pipeline one step: promote validated modules
+    shadow→canary→active under automated gates, or auto-roll-back on bad health.
+    Her freedom to grow, bounded — the parent kernel/safety/core stay gated.
+    Runs on the global tick; never blocks Rohit's replies."""
+    from app.config import get_settings
+    if dry_run or not get_settings().self_module_factory_enabled:
+        return {"module_lifecycle": "disabled"}
+    from app.brain import module_lifecycle
+    out = module_lifecycle.tick()
+    if not out.get("enabled"):
+        return {"module_lifecycle": "disabled"}
+    return {"module_lifecycle": out}
+
+
 def maybe_run_self_heal(*, dry_run: bool) -> dict:
     """Daily: Shree scans her own logs for runtime bugs and — when autonomous
     mode is on — opens a self-improvement to fix one, going through every 2H
@@ -429,6 +444,10 @@ def main() -> int:
                                        lambda: maybe_run_autonomous_tasks(dry_run=dry_run))
                 if auto_tasks.get("autonomous_tasks") not in ("disabled", "error"):
                     result = {**result, **auto_tasks}
+                modules = _safe_run("module_lifecycle",
+                                    lambda: maybe_advance_modules(dry_run=dry_run))
+                if modules.get("module_lifecycle") not in ("disabled", "error"):
+                    result = {**result, **modules}
                 next_global_at = time.monotonic() + global_interval
 
             print(result, flush=True)

@@ -65,15 +65,18 @@ def test_extract_skips_when_no_future_cue(monkeypatch):
 
 
 def test_extract_skips_when_model_says_no_commitment(monkeypatch):
+    # Deterministic parser is now primary; use a message with NO parseable time
+    # so it falls through to the (mocked) model, which declines.
     _set_light(monkeypatch, '{"due_at": null}')
-    res = pm.extract("remind me tomorrow at 5pm", 135, is_guardian=True)
+    res = pm.extract("remind me sometime about the thing", 135, is_guardian=True)
     assert res["created"] is False
     assert res["reason"] == "no_commitment"
 
 
 def test_extract_rejects_due_in_past(monkeypatch):
+    # No deterministic time in the text → model path; model returns a past date.
     _due_json(monkeypatch, "2000-01-01 10:00")
-    res = pm.extract("remind me about the old thing at 10", 135, is_guardian=True)
+    res = pm.extract("remind me about the old thing", 135, is_guardian=True)
     assert res["created"] is False
     assert res["reason"] == "due_in_past"
 
@@ -81,17 +84,20 @@ def test_extract_rejects_due_in_past(monkeypatch):
 def test_extract_rejects_low_confidence(monkeypatch):
     now = dt.datetime.now(pm._IST)
     soon = (now + dt.timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")
+    # No parseable time in the words → model path; model is unsure (low conf).
     _due_json(monkeypatch, soon, confidence=0.2)
-    res = pm.extract("remind me at " + soon, 135, is_guardian=True)
+    res = pm.extract("remind me about that thing later", 135, is_guardian=True)
     assert res["created"] is False
     assert res["reason"] == "low_confidence"
 
 
 def test_extract_never_raises_on_model_error(monkeypatch):
+    # A message with no deterministic time falls to the model; if the model
+    # raises, extract must degrade gracefully (never break the reply).
     def boom(prompt):
         raise RuntimeError("model down")
     monkeypatch.setattr(pm, "_light_complete", boom)
-    res = pm.extract("remind me tomorrow at 5pm", 135, is_guardian=True)
+    res = pm.extract("remind me about the thing later", 135, is_guardian=True)
     assert res["created"] is False
     assert res["reason"] == "light_model_error"
 
