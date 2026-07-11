@@ -1195,16 +1195,25 @@ def _message_attachment(row: dict) -> dict | None:
 
 
 def _message_sender(row: dict) -> dict:
-    for key in ("sender", "user", "from", "author"):
-        value = row.get(key)
-        if isinstance(value, dict):
-            return value
-    return {
+    direct = {
         "uuid": row.get("sender_uuid") or row.get("sender_user_uuid"),
         "username": row.get("username") or row.get("sender_username"),
         "email": row.get("email") or row.get("sender_email"),
         "name": row.get("name") or row.get("display_name") or row.get("sender_name"),
     }
+    for key in ("sender", "user", "from", "author"):
+        value = row.get(key)
+        if isinstance(value, dict):
+            # TODY deployments differ: some put UUID in the top-level message
+            # and some put a partial sender object inside it. Merge both so an
+            # incomplete nested object can never erase the authoritative UUID.
+            merged = dict(direct)
+            merged.update({k: v for k, v in value.items() if v not in (None, "")})
+            for key_name in ("uuid", "user_uuid", "tody_user_uuid", "sender_uuid"):
+                if not merged.get("uuid") and value.get(key_name):
+                    merged["uuid"] = value[key_name]
+            return merged
+    return direct
 
 
 def _sent_message_id(data: dict) -> int | str | None:

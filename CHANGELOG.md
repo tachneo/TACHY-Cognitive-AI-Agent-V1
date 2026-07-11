@@ -2025,3 +2025,8 @@ Recommended order:
 - Preserved native typing indicators and chunk pacing; no generated text is logged as a typing preview.
 - Feature is explicitly configurable and capped to prevent worker stalls.
 - Verification: 24 typing/chat capability tests pass.
+## 2026-07-11 — Guardian Identity Mapping Fix
+
+- Fixed TODY sender normalization so an incomplete nested sender object cannot erase the authoritative top-level sender UUID.
+- Prevents verified Rohit messages from entering the impersonation deflection path and restores reminder/task/coding conversation context.
+- Verification: guardian mapping, worker, safety, and dialogue tests pass (21 tests).
