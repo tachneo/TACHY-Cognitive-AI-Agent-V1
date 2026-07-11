@@ -1999,3 +1999,15 @@ Recommended order:
 - Added architecture, surgery, QA, and self-identity documentation plus a minimal README statement with no AGI completion overclaim.
 - Verification: 18 focused control-plane/self-model/factory/surgery/deployment tests pass; OpenAPI route smoke confirms all new route groups are mounted.
 - Feature flags remain disabled by default for autonomous factory, canary, surgery, and core-patch promotion.
+## 2026-07-11 — Phase 6: Protected APIs, Documentation, and QA
+
+- Mounted API-key-protected module, surgery, and self-model routes.
+- Added architecture, surgery, QA, and self-identity documentation plus a minimal README note.
+- Verified route registration through OpenAPI and ran the complete test suite: **632 passed in 204.08s**.
+- Feature flags remain safe by default: factory/surgery/canary/promotion are disabled until guardian-reviewed configuration enables them.
+## 2026-07-11 — TODY Individual Chat Capability Expansion
+
+- Expanded the TODY client for threaded replies, attachments, image-safe download, edit/delete/forward, receipts, reactions, starring, scheduling, search, previews, conversation controls, and direct/secret/group chat creation.
+- Added attachment-aware inbound processing so image-only messages are no longer dropped by the worker.
+- Added an opt-in multimodal vision adapter with allow-listed media hosts, byte limits, explicit unavailable states, and no false “I saw the image” claims.
+- Added focused API/worker/vision tests; 66 relevant tests pass.

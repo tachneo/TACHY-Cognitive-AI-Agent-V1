@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     light_nvidia_key: str = ""
     vision_nvidia_model: str = "minimaxai/minimax-m3"             # multimodal
     vision_nvidia_key: str = ""
+    tody_vision_enabled: bool = False
+    tody_vision_max_bytes: int = 10_000_000
+    tody_vision_model: str = "minimaxai/minimax-m3"
+    tody_media_allowed_hosts: str = "api.tody.in,chat.tody.in,chat.tachy.in"
 
     # GitHub self-lookup (Phase 2C-selfverify F2) — read-only PAT so Shree can
     # read her OWN repo when Rohit links it on TODY. Enforced allowlist: she can

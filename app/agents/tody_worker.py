@@ -159,13 +159,9 @@ def _poll_once_unlocked(*, dry_run: bool, conversation_limit: int,
                 "candidate": candidate,
                 "reason": "dry run only; no reply drafted or sent",
             }
-        result = tody_agent.draft_reply_to_message(
-            conversation_id,
-            candidate["body"],
-            sender=candidate.get("sender"),
-            message_id=candidate.get("message_id"),
-            extra_message_ids=candidate.get("extra_message_ids"),
-        )
+        kwargs = {"sender": candidate.get("sender"), "message_id": candidate.get("message_id"), "extra_message_ids": candidate.get("extra_message_ids")}
+        if candidate.get("attachments"): kwargs["attachments"] = candidate["attachments"]
+        result = tody_agent.draft_reply_to_message(conversation_id, candidate["body"], **kwargs)
         result["source_message"] = {
             "id": candidate.get("message_id"),
             "body": candidate.get("body"),
@@ -208,13 +204,9 @@ def _poll_conversation_unlocked(conversation_id: int, *, dry_run: bool,
             "fast_conversation": True,
             "reason": "dry run only; no reply drafted or sent",
         }
-    result = tody_agent.draft_reply_to_message(
-        conversation_id,
-        candidate["body"],
-        sender=candidate.get("sender"),
-        message_id=candidate.get("message_id"),
-        extra_message_ids=candidate.get("extra_message_ids"),
-    )
+    kwargs = {"sender": candidate.get("sender"), "message_id": candidate.get("message_id"), "extra_message_ids": candidate.get("extra_message_ids")}
+    if candidate.get("attachments"): kwargs["attachments"] = candidate["attachments"]
+    result = tody_agent.draft_reply_to_message(conversation_id, candidate["body"], **kwargs)
     result["source_message"] = {
         "id": candidate.get("message_id"),
         "body": candidate.get("body"),
@@ -255,14 +247,16 @@ def _latest_unprocessed_message(conversation_id: int, data: dict | list) -> dict
     pending: list[dict] = []
     for row in items:  # chronological order
         body = tody_agent._message_body(row)
-        if not body:
+        attachment = tody_agent._message_attachment(row)
+        if not body and not attachment:
             continue
         message_id = row.get("id") or row.get("message_id")
         if message_id is None or dialogue_memory.was_processed(
                 "tody", conversation_id, message_id):
             continue
         pending.append({"id": message_id, "body": body,
-                        "sender": tody_agent._message_sender(row)})
+                        "sender": tody_agent._message_sender(row),
+                        "attachment": attachment})
     if not pending:
         return None
     combined = "\n".join(p["body"] for p in pending)
@@ -272,5 +266,6 @@ def _latest_unprocessed_message(conversation_id: int, data: dict | list) -> dict
         "extra_message_ids": [p["id"] for p in pending[:-1]],
         "body": combined,
         "sender": pending[-1]["sender"],
+        "attachments": [p["attachment"] for p in pending if p.get("attachment")],
         "batch_size": len(pending),
     }

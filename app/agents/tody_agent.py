@@ -550,6 +550,7 @@ def draft_reply_to_message(
     sender: dict | None = None,
     message_id: int | str | None = None,
     extra_message_ids: list | None = None,
+    attachments: list[dict] | None = None,
     auto_send_guardian: bool | None = None,
 ) -> dict:
     """Process an inbound TODY message and queue the drafted reply for approval.
@@ -684,6 +685,21 @@ def draft_reply_to_message(
                              or (sender or {}).get("username")))
             context = dialogue_memory.identity_context(
                 conversation_id, person=speaker or person)
+            # Attachment-aware chat: inspect only TODY-hosted image bytes and
+            # only when the explicitly enabled vision adapter is configured.
+            for attachment in attachments or []:
+                if str(attachment.get("mime_type", "")).lower().startswith("image/"):
+                    try:
+                        from app.vision.tody import analyze_image
+                        raw, mime = get_client().download_attachment(
+                            attachment, max_bytes=get_settings().tody_vision_max_bytes)
+                        vision = analyze_image(raw, mime, "Describe the attached image and answer any user request about it. Be explicit about uncertainty.")
+                        if vision.get("ok"):
+                            context += "\n[VERIFIED IMAGE OBSERVATION]\n" + str(vision.get("answer", ""))[:6000]
+                        else:
+                            context += "\n[IMAGE UNAVAILABLE: do not claim to have seen it; explain the limitation.]"
+                    except Exception:
+                        context += "\n[IMAGE UNAVAILABLE: do not claim to have seen it; explain the limitation.]"
             if speaker:
                 context += (
                     f"\n[SPEAKER PIN: you are talking ONLY to {speaker} in this "
@@ -944,8 +960,9 @@ def process_latest_message(conversation_id: int, limit: int = 10) -> dict:
         return {"processed": False, "reason": "no messages found"}
     latest = items[-1]
     body = _message_body(latest)
-    if not body:
-        return {"processed": False, "reason": "latest message has no text body"}
+    attachment = _message_attachment(latest)
+    if not body and not attachment:
+        return {"processed": False, "reason": "latest message has no text or attachment"}
     message_id = latest.get("id") or latest.get("message_id")
     if dialogue_memory.was_processed("tody", conversation_id, message_id):
         return {
@@ -960,6 +977,7 @@ def process_latest_message(conversation_id: int, limit: int = 10) -> dict:
         body,
         sender=_message_sender(latest),
         message_id=message_id,
+        attachments=[attachment] if attachment else None,
     )
     result["source_message"] = {
         "id": message_id,
@@ -1127,6 +1145,15 @@ def _message_body(row: dict) -> str:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
+
+
+def _message_attachment(row: dict) -> dict | None:
+    value = row.get("attachment")
+    if isinstance(value, dict):
+        return value
+    if row.get("attachment_id") and row.get("attachment_url"):
+        return {"id": row.get("attachment_id"), "url": row.get("attachment_url"), "mime_type": row.get("attachment_mime", "")}
+    return None
 
 
 def _message_sender(row: dict) -> dict:
