@@ -5,9 +5,52 @@ import json
 from sqlalchemy import select
 from app.db.models import EvaluationRun, ModuleHealthSample, SelfModelEvent, session_scope
 
+# A repair-queue fix_class → the kind of child module that would address it.
+# This is the bridge that turns Shree's own noticing (the metacognitive repair
+# queue) into weakness evidence the module factory can act on — the link that
+# was missing, which is why the factory had nothing to propose.
+_FIXCLASS_TO_MODULE = {
+    "directive": ("speech", "reply_style_guard"),
+    "memory":    ("memory", "memory_recall_guard"),
+    "config":    ("tool", "config_tuning_guard"),
+    "code":      ("reasoning", "logic_repair_guard"),
+    "capability": ("agent", "capability_extender"),
+    "unknown":   ("evaluator", "generic_quality_guard"),
+}
+
+
+def _from_repair_queue(limit: int) -> list[dict]:
+    """Ready repair-queue signatures (already past their evidence-tier
+    recurrence threshold) → weaknesses. Evidence-only: nothing here is
+    fabricated; a row is 'ready' only because a real failure recurred."""
+    out: list[dict] = []
+    try:
+        from app.brain import repair_queue
+        ready = repair_queue.ready(limit=limit)
+    except Exception:  # noqa: BLE001
+        return out
+    for r in ready:
+        mtype, mkey = _FIXCLASS_TO_MODULE.get(
+            r.get("fix_class", "unknown"), _FIXCLASS_TO_MODULE["unknown"])
+        # severity from recurrence + evidence tier (tier 1 = guardian = strongest)
+        severity = min(10, 3 + int(r.get("recurrence", 1))
+                       + (2 if int(r.get("tier", 4)) <= 2 else 0))
+        out.append({
+            "weakness_key": r["signature"],
+            "severity": severity,
+            "evidence": [f"tier={r.get('tier')}", f"recurrence={r.get('recurrence')}",
+                         (r.get("sample") or "")[:120]],
+            "recommended_module_type": mtype,
+            "recommended_module_key": f"{mkey}_{r['signature'].replace(':','_').replace('-','_')}"[:110],
+            "expected_improvement": f"stop the recurring '{r['signature']}' failure",
+        })
+    return out
+
 
 def detect_weaknesses(limit: int = 10) -> list[dict]:
     findings: list[dict] = []
+    # Her own noticing first — the strongest, most actionable evidence.
+    findings.extend(_from_repair_queue(limit))
     with session_scope() as db:
         for run in db.scalars(select(EvaluationRun).where(EvaluationRun.passed.is_(False)).order_by(EvaluationRun.created_at.desc()).limit(limit)).all():
             findings.append({"weakness_key": "evaluation_failure", "severity": 7,
