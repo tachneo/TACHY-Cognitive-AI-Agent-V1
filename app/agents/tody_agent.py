@@ -789,7 +789,15 @@ def draft_reply_to_message(
     # Autonomous social mode: Shree may talk freely with non-guardian users,
     # under stranger-safety guardrails. OFF → non-guardian replies stay queued.
     s_settings = get_settings()
+    # Defense-in-depth: the guardian's OWN pinned fast-reply conversation must
+    # NEVER be subject to the stranger social throttle. If guardian detection
+    # ever fails (e.g. TODY drops username/email from the sender payload, as it
+    # did 11 Jul), Rohit's messages were silently throttled as a stranger's.
+    # His conversation is never a "stranger" conversation, whatever the payload.
+    _fast_conv = (os.getenv("TODY_FAST_REPLY_CONVERSATION_ID") or "").strip()
+    _is_guardian_conv = _fast_conv.isdigit() and int(_fast_conv) == conversation_id
     autonomous_social = (not is_guardian
+                         and not _is_guardian_conv
                          and s_settings.tody_autonomous_social)
     social = social_policy.evaluate(conversation_id, message) \
         if autonomous_social else {"action": "off"}
