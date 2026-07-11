@@ -1,0 +1,3 @@
+# Runtime-generated specifications, modules, and tests are never committed.
+*/
+!.gitignore

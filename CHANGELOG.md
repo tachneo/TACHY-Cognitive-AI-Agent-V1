@@ -1980,3 +1980,10 @@ Recommended order:
 - Integrated the evidence block into self-question prompts without replacing existing architecture-aware behavior.
 - Added tests for state shape, event/identity audit persistence, uncertainty, and contradiction detection.
 - Verification: 51 focused self-model/cognitive-loop tests pass.
+## 2026-07-11 — Phase 4: Evidence-Driven Factory and Evaluation
+
+- Added conservative weakness detection backed by failed evaluations, health samples, and low-confidence self-model evidence; no evidence means no proposal.
+- Added sandbox-only module generation for specifications, Python contract artifacts, and pytest files.
+- Added AST/import/interface evaluation that blocks forbidden imports/calls and requires `health`, `process`, and `fallback` contracts.
+- Added factory tests covering no-evidence behavior and sandbox generation/validation.
+- Verification: factory runtime tests pass (2 tests).
