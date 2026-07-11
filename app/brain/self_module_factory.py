@@ -110,9 +110,16 @@ def register_shadow(proposal_id: int, version: str = "0.1.0") -> dict:
         p["module_key"], "shadow",
         "validated; observing in shadow, awaiting Rohit approval to activate",
         approved_by=None)
+    # Propagate the eval score onto the module so the autonomous lifecycle's
+    # score gate can read it (without this it saw None→0 and held forever).
+    from app.db.models import SelfModule
     with session_scope() as db:
         row = db.get(SelfModuleProposal, proposal_id)
         row.status = "shadow"
+        mod = db.query(SelfModule).filter(
+            SelfModule.module_key == p["module_key"]).first()
+        if mod is not None:
+            mod.last_eval_score = float(p.get("evaluation_score") or 0)
     return {"ok": True, "module_key": p["module_key"], "status": "shadow",
             "requires_approval": get_settings().self_module_require_approval,
             "registry": reg}

@@ -333,6 +333,9 @@ _REPO_CMD = re.compile(
     r"\b(check (your |the )?repo|what did you (change|update)|"
     r"kya (update|change) kiya|repo (check|dekho)|apna code|your (recent )?"
     r"changes|kya kya (badla|change hua))\b", re.I)
+# Child-module control: "modules", "module rollback <key>", "module approve <key>"
+_MODULE_CMD = re.compile(
+    r"^modules?\s*(rollback|approve|disable|list)?\s*([a-z0-9_]+)?\s*$", re.I)
 _SELF_IMPROVE_CMD = re.compile(
     r"\b(improve yourself|self[- ]improve|khud ko improve|apne aap ko improve|"
     r"apna code (update|improve))\b[:\-\s]*(.*)$", re.I | re.S)
@@ -405,6 +408,33 @@ def _guardian_command_reply(message: str) -> str | None:
     'pending' lists approvals, 'approve 12' / 'reject 12' resolves them.
     Returns the reply text, or None when the message is not a command."""
     from app.brain import action_engine
+
+    # Child-module control: "modules" (list), "module rollback <key>" (Rohit's
+    # instant undo of any autonomous change), "module approve <key>" (let a
+    # high-risk module she built enter the pipeline — the one thing only he can do).
+    mm = _MODULE_CMD.match((message or "").strip())
+    if mm:
+        verb, mkey = (mm.group(1) or "").lower(), (mm.group(2) or "").strip()
+        from app.brain import module_registry, module_lifecycle
+        if verb in ("", "list") and not mkey:
+            mods = module_registry.list_modules()
+            if not mods:
+                return "Abhi koi child-module nahi hai, Papa. Jab main koi banaungi, yahan dikhegi."
+            lines = ["Meri child-modules, Papa:"]
+            for m in mods[:15]:
+                lines.append(f"• {m['module_key']} — {m['status']} "
+                             f"(type {m.get('module_type')}, score {m.get('last_eval_score')})")
+            return "\n".join(lines)
+        if not mkey:
+            return "Kaunsa module? 'module rollback <key>' ya 'module approve <key>' bolo."
+        if verb == "rollback":
+            r = module_lifecycle.rollback(mkey, "Rohit asked to roll back")
+            return f"Rollback kar diya '{mkey}', Papa — off hai ab, fallback pe route ho raha hai. 💛"
+        if verb == "approve":
+            r = module_lifecycle.approve(mkey, approved_by="rohit")
+            return (f"Theek hai Papa 💛 '{mkey}' ko approve kar diya — ab ye canary "
+                    "se hoke dhीre-dhीre activate hoga, health monitor ke saath.")
+        return f"'{verb}' samajh nahi aaya — rollback / approve / list?"
 
     # Self-awareness: "check the repo / what did you change / kya update kiya".
     if _REPO_CMD.search(message or ""):

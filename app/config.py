@@ -182,6 +182,22 @@ class Settings(BaseSettings):
     self_module_min_score_medium: int = 92
     self_module_min_score_high: int = 97
 
+    # Autonomous child-module activation (Rohit's grant: child modules grow
+    # freely; only the CORE brain stays guardian-gated). When enabled, LOW/
+    # MEDIUM-risk validated modules auto-promote shadow → canary → active,
+    # driven by the worker, gated at every step by eval score + live health +
+    # auto-rollback. HIGH/CRITICAL risk, or anything touching protected core/
+    # safety files, ALWAYS requires Rohit — she can never self-grant those.
+    self_module_autonomous_activation: bool = False   # master permission
+    self_module_max_autonomous_risk: str = "medium"   # low | medium (never high)
+    self_module_min_health: int = 80                  # rollback floor
+    self_module_canary_min_samples: int = 5           # health samples per step
+    # Whether an ACTIVE child module actually runs (advisory) in the live path.
+    # Separate, extra-cautious switch: executing self-generated code on live
+    # traffic is the single riskiest step, so it stays off until deliberately
+    # enabled. Shadow execution (output discarded) runs regardless.
+    self_module_live_invocation: bool = False
+
     # Self-heal (Phase 2K) — a daily worker tick runs self_diagnose.auto_heal()
     # so Shree finds and fixes her own runtime bugs WITHOUT Rohit having to ask
     # "diagnose". She still goes through every 2H safety gate (branch + tests +
