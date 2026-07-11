@@ -1974,3 +1974,9 @@ Recommended order:
 - Added transactional `module_registry` operations for registration, duplicate prevention, status changes, active-version approval, fallback lookup, policy hashing, and control-log audit events.
 - Added safe-default feature flags for child-module factory, shadow/canary, surgery, and core-patch promotion.
 - Verification: capability and registry tests pass; child modules cannot register as Parent Brain, safety policy, or approval authority.
+## 2026-07-11 — Phase 3: Evidence-Based Self-Model
+
+- Extended the existing self-model with structured state, evidence updates, identity reflection records, consistency checks, and auditable persistence.
+- Integrated the evidence block into self-question prompts without replacing existing architecture-aware behavior.
+- Added tests for state shape, event/identity audit persistence, uncertainty, and contradiction detection.
+- Verification: 51 focused self-model/cognitive-loop tests pass.

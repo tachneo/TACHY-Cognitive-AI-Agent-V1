@@ -383,7 +383,7 @@ def _draft_reply(message: str, band: str, decision: dict,
     context_block = f"Conversation/context:\n{context}\n\n" if context else ""
     self_block = ""
     if self_model.is_self_question(message):
-        self_block = self_model.self_knowledge_prompt()
+        self_block = self_model.self_knowledge_prompt() + "\n" + self_model.self_model_prompt_block(message)
     people_block = world_model.people_context_block(message)
     emotion_block = ""
     if emotion and emotion.get("enabled") and emotion.get("top_emotions"):

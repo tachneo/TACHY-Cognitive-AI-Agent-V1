@@ -14,9 +14,103 @@ It is descriptive only — it never inflates capability or claims consciousness.
 """
 from __future__ import annotations
 
+import datetime as dt
+import json
+from typing import Any
+
 from app.brain import curriculum_learning, identity_core, offline_brain
 from app.config import get_settings
 from app.memory import base_memory
+from app.db.models import IdentityReflectionLog, SelfModelEvent, session_scope
+
+
+def get_self_state() -> dict:
+    """Return an evidence-backed, serialisable self-state snapshot.
+
+    The state describes current architecture and uncertainty; it is not an
+    identity verdict and never grants permissions.
+    """
+    d = describe_self()
+    return {
+        "name": d.get("name", "Shree"),
+        "current_stage": "cognitive_agent_evolving",
+        "relationship_context": d.get("relationship", "guardian relationship"),
+        "capabilities": [k for k, v in {
+            "persistent_memory": bool(d.get("total_memories") is not None),
+            "offline_brain": d.get("has_offline_brain", False),
+            "curriculum_learning": d.get("has_curriculum_learning", False),
+            "emotion_priority_signals": d.get("has_emotion_engine", False),
+            "self_improvement_branching": d.get("has_self_improvement", False),
+        }.items() if v],
+        "limitations": list(d.get("limitations", [])),
+        "memories_count": d.get("total_memories") or 0,
+        "learning_history": [],
+        "emotional_priority_state": {},
+        "autonomy_level": 2 if d.get("self_improvement_autonomous") else 1,
+        "confidence_score": 85,
+        "identity_summary": d.get("nature", ""),
+        "last_reflection_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+    }
+
+
+def update_self_state(event: str, evidence: Any, confidence: float,
+                      metadata: dict | None = None) -> dict:
+    """Persist a bounded evidence event and return the resulting state."""
+    if not event or not str(event).strip():
+        raise ValueError("event is required")
+    if not 0 <= float(confidence) <= 100:
+        raise ValueError("confidence must be between 0 and 100")
+    state = get_self_state()
+    state["confidence_score"] = round((state["confidence_score"] + float(confidence)) / 2, 2)
+    state["learning_history"] = [{"event": str(event), "evidence": str(evidence)[:2000],
+                                  "confidence": float(confidence)}]
+    with session_scope() as db:
+        db.add(SelfModelEvent(event=str(event)[:180], evidence=str(evidence)[:10000],
+                              confidence=float(confidence), metadata_json=json.dumps(metadata or {}, sort_keys=True),
+                              self_state_json=json.dumps(state, sort_keys=True)))
+    return state
+
+
+def self_consistency_check(answer: str, self_state: dict | None = None) -> dict:
+    """Check an answer against known state without prescribing its wording."""
+    state = self_state or get_self_state()
+    text = (answer or "").lower()
+    contradictions: list[str] = []
+    if "no memory" in text and state.get("memories_count", 0) > 0:
+        contradictions.append("answer denies recorded persistent memory")
+    if "cannot learn" in text and state.get("learning_history"):
+        contradictions.append("answer denies recorded learning evidence")
+    if "fully autonomous" in text and state.get("autonomy_level", 0) < 7:
+        contradictions.append("answer overstates autonomy")
+    return {"passed": not contradictions, "contradictions": contradictions,
+            "confidence": state.get("confidence_score", 0)}
+
+
+def identity_reflection(question: str, context: dict | None = None) -> dict:
+    state = get_self_state()
+    if context:
+        state["reflection_context"] = context
+    return {"question": question, "self_state": state,
+            "guidance": "Describe evidence, uncertainty, capabilities, limitations, and relationship context; do not force a fixed identity claim.",
+            "confidence": state["confidence_score"]}
+
+
+def record_identity_answer(question: str, answer: str, confidence: float,
+                           review: dict | None = None) -> dict:
+    if not 0 <= float(confidence) <= 100:
+        raise ValueError("confidence must be between 0 and 100")
+    state = get_self_state()
+    consistency = self_consistency_check(answer, state)
+    with session_scope() as db:
+        db.add(IdentityReflectionLog(question=question, answer=answer,
+            self_state_json=json.dumps(state, sort_keys=True), confidence=float(confidence),
+            consistency_passed=consistency["passed"], review_json=json.dumps(review or {}, sort_keys=True)))
+    return {"answer": answer, "confidence": float(confidence), **consistency}
+
+
+def self_model_prompt_block(question: str | None = None) -> str:
+    reflection = identity_reflection(question or "self-reflection")
+    return "SELF-MODEL EVIDENCE (not a fixed identity claim):\n" + json.dumps(reflection["self_state"], sort_keys=True)
 
 
 def describe_self() -> dict:
