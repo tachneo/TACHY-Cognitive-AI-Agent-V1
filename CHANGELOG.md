@@ -2013,3 +2013,9 @@ Recommended order:
 - Added focused API/worker/vision tests; 66 relevant tests pass.
 - Added approval-bound threaded reply support to the existing TODY send route and executor.
 - Preserved compatibility with existing send adapters while forwarding reply metadata only when present.
+## 2026-07-11 — Parent Kernel Orchestrator
+
+- Added deterministic capability routing for image, memory, learning, coding, and conversation tasks.
+- Safety and approval remain mandatory authority modules; forbidden requests are blocked and high-risk requests require approval.
+- Integrated route context into the cognitive loop with a stable policy hash for auditability.
+- Verification: Parent Kernel routing and regression tests pass (38 focused tests).

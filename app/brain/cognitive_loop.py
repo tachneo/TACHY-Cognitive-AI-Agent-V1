@@ -16,7 +16,7 @@ from dataclasses import asdict
 from app.brain import (behavior_engine, emotion_engine, identity_core,
                        cognitive_state, curriculum_learning, self_model,
                        world_model, interest_system, need_system, offline_brain,
-                       self_review, teacher_learning)
+                       self_review, teacher_learning, parent_kernel)
 from app.brain import reply_safety
 from app.brain.attention_system import Signals, attention_band, priority_score
 from app.brain.decision_engine import as_dict as decision_dict
@@ -381,6 +381,9 @@ def _draft_reply(message: str, band: str, decision: dict,
         "re-state the time clearly so it registers.\n\n"
     )
     context_block = f"Conversation/context:\n{context}\n\n" if context else ""
+    route_block = parent_kernel.route_context(message)
+    if route_block:
+        context_block += route_block + "\n\n"
     self_block = ""
     if self_model.is_self_question(message):
         self_block = self_model.self_knowledge_prompt() + "\n" + self_model.self_model_prompt_block(message)

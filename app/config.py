@@ -171,6 +171,7 @@ class Settings(BaseSettings):
     self_module_require_approval: bool = True
     self_module_shadow_enabled: bool = True
     self_module_allow_core_patch: bool = False
+    parent_kernel_router_enabled: bool = True
     self_module_sandbox_root: str = "app/sandbox"
     self_module_min_score_low: int = 85
     self_module_min_score_medium: int = 92
