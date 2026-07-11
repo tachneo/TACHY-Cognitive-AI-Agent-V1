@@ -2011,3 +2011,5 @@ Recommended order:
 - Added attachment-aware inbound processing so image-only messages are no longer dropped by the worker.
 - Added an opt-in multimodal vision adapter with allow-listed media hosts, byte limits, explicit unavailable states, and no false “I saw the image” claims.
 - Added focused API/worker/vision tests; 66 relevant tests pass.
+- Added approval-bound threaded reply support to the existing TODY send route and executor.
+- Preserved compatibility with existing send adapters while forwarding reply metadata only when present.

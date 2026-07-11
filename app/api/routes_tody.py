@@ -40,12 +40,13 @@ def messages(conversation_id: int = Query(gt=0),
 class SendIn(BaseModel):
     conversation_id: int = Field(gt=0)
     body: str = Field(min_length=1, max_length=4000)
+    reply_to_message_id: int | None = Field(default=None, gt=0)
 
 
 @router.post("/send")
 def send(req: SendIn) -> dict:
     """Queue an outbound message for approval (does not send)."""
-    return tody_agent.request_send(req.conversation_id, req.body)
+    return tody_agent.request_send(req.conversation_id, req.body, req.reply_to_message_id)
 
 
 class DraftReplyIn(BaseModel):
@@ -156,12 +157,13 @@ class SendExecuteIn(BaseModel):
     approval_id: int = Field(gt=0)
     conversation_id: int = Field(gt=0)
     body: str = Field(min_length=1, max_length=4000)
+    reply_to_message_id: int | None = Field(default=None, gt=0)
 
 
 @router.post("/send/execute")
 def send_execute(req: SendExecuteIn) -> dict:
     """Send only if the referenced approval has been approved."""
-    return tody_agent.execute_send(req.approval_id, req.conversation_id, req.body)
+    return tody_agent.execute_send(req.approval_id, req.conversation_id, req.body, req.reply_to_message_id)
 
 
 class PostIn(BaseModel):

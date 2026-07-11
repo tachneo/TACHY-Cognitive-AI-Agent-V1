@@ -37,8 +37,11 @@ def _canonical_payload(data: dict) -> str:
     return json.dumps(data, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
 
-def _send_payload(conversation_id: int, body: str) -> str:
-    return _canonical_payload({"conversation_id": conversation_id, "body": body})
+def _send_payload(conversation_id: int, body: str, reply_to_message_id: int | None = None) -> str:
+    payload = {"conversation_id": conversation_id, "body": body}
+    if reply_to_message_id is not None:
+        payload["reply_to_message_id"] = reply_to_message_id
+    return _canonical_payload(payload)
 
 
 def _post_payload(body: str) -> str:
@@ -72,12 +75,20 @@ def messages(conversation_id: int, limit: int = 30) -> dict:
     return get_client().messages(conversation_id, limit=limit)
 
 
-def request_send(conversation_id: int, body: str) -> dict:
+def request_send(conversation_id: int, body: str, reply_to_message_id: int | None = None) -> dict:
     """Outbound message → creates a pending approval, does NOT send."""
-    payload = _send_payload(conversation_id, body)
+    payload = _send_payload(conversation_id, body, reply_to_message_id)
     appr = approvals.request_approval("send_message", payload=payload)
     return {"queued": True, "approval": appr,
             "note": "Message will send only after this approval is approved."}
+
+
+def request_reply(conversation_id: int, message_id: int, body: str) -> dict:
+    """Queue a threaded reply; the approval binds the parent message ID."""
+    payload = _send_payload(conversation_id, body, message_id)
+    appr = approvals.request_approval("send_message", payload=payload)
+    return {"queued": True, "approval": appr,
+            "note": "Threaded reply will send only after approval."}
 
 
 def _plain_chat_text(reply: str) -> str:
@@ -461,7 +472,8 @@ def _guardian_command_reply(message: str) -> str | None:
         try:
             payload = json.loads(row["payload"] or "{}")
             sent = execute_send(approval_id, int(payload["conversation_id"]),
-                                str(payload["body"]))
+                                str(payload["body"]),
+                                int(payload["reply_to_message_id"]) if payload.get("reply_to_message_id") else None)
             return ("Approved and sent." if sent.get("sent")
                     else f"Approved, but send failed: {sent.get('reason')}")
         except (ValueError, KeyError):
@@ -1023,7 +1035,8 @@ def direct_reply_to_guardian(conversation_id: int, message: str,
     )
 
 
-def execute_send(approval_id: int, conversation_id: int, body: str) -> dict:
+def execute_send(approval_id: int, conversation_id: int, body: str,
+                 reply_to_message_id: int | None = None) -> dict:
     """Consume one matching approval and send its message at most once."""
     row = approvals.get_approval(approval_id)
     if row is None:
@@ -1032,7 +1045,7 @@ def execute_send(approval_id: int, conversation_id: int, body: str) -> dict:
         return {"sent": False, "reason": "approval still pending"}
     if row["status"] != "approved" or row["action"] != "send_message":
         return {"sent": False, "reason": "approval not approved"}
-    expected_payload = _send_payload(conversation_id, body)
+    expected_payload = _send_payload(conversation_id, body, reply_to_message_id)
     if row["payload"] != expected_payload:
         log_event(
             "approval_payload_mismatch",
@@ -1050,7 +1063,11 @@ def execute_send(approval_id: int, conversation_id: int, body: str) -> dict:
         return {"sent": False, "reason": f"approval is {claim['status']}"}
 
     try:
-        res = get_client().send_message(conversation_id, body)
+        if reply_to_message_id is None:
+            res = get_client().send_message(conversation_id, body)
+        else:
+            res = get_client().send_message(conversation_id, body,
+                                            reply_to_message_id=reply_to_message_id)
         sent_id = _sent_message_id(res)
         dialogue_memory.mark_processed("tody", conversation_id, sent_id)
         log_event(
