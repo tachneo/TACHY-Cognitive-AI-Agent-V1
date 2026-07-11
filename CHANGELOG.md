@@ -1993,3 +1993,9 @@ Recommended order:
 - Added 5/25/100 canary validation and automatic rollback predicates for safety, privacy, health, latency/error, and severe correction signals.
 - Added surgery-session lifecycle helpers for isolation, preflight, shadow, canary, promotion, and rollback while preserving Parent Kernel availability.
 - Verification: shadow/canary/surgery tests pass (3 tests).
+## 2026-07-11 — Phase 6: Protected APIs, Documentation, and Release Checklist
+
+- Mounted API-key-protected module, self-model, and surgery endpoints under `/brain`.
+- Added architecture, surgery, QA, and self-identity documentation plus a minimal README statement with no AGI completion overclaim.
+- Verification: 18 focused control-plane/self-model/factory/surgery/deployment tests pass; OpenAPI route smoke confirms all new route groups are mounted.
+- Feature flags remain disabled by default for autonomous factory, canary, surgery, and core-patch promotion.

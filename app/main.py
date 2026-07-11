@@ -42,6 +42,7 @@ from app.api import (  # noqa: E402
     routes_chat, routes_decision, routes_emotion, routes_inner,
     routes_learning, routes_memory, routes_projects, routes_reflection,
     routes_tody,
+    module_factory, brain_surgery,
 )
 
 protected = [Depends(require_internal_api_key)]
@@ -58,3 +59,5 @@ app.include_router(routes_emotion.router, dependencies=protected)
 app.include_router(routes_behavior.router, dependencies=protected)
 app.include_router(routes_inner.router, dependencies=protected)
 app.include_router(routes_actions.router, dependencies=protected)
+app.include_router(module_factory.router, dependencies=protected)
+app.include_router(brain_surgery.router, dependencies=protected)

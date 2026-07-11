@@ -260,3 +260,6 @@ Schema changes should use Alembic migrations in `app/db/migrations/`.
 | **3** | World model: people, clients, schools, systems, risks, dependencies |
 
 First build the **brain base**, then attach skills.
+# Self-Module Factory, Brain Surgery Runtime, and Self-Identity Self-Model
+
+The repository now contains an approval-gated child-module control plane, reversible shadow/canary surgery lifecycle, and evidence-based self-model reflection. These features enable controlled self-improvement without granting child modules authority over the Parent Kernel.
