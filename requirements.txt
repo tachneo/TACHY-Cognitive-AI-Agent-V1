@@ -8,6 +8,7 @@ PyMySQL>=1.1            # MySQL driver (swap for psycopg[binary] if PostgreSQL)
 alembic>=1.13           # DB migrations
 python-dotenv>=1.0
 httpx>=0.27            # LLM provider calls
+PyYAML>=6.0            # versioned golden/evaluation case files
 
 # optional (enable as phases land)
 # redis>=5.0           # working memory

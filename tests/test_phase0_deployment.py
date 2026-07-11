@@ -34,6 +34,19 @@ def test_orm_metadata_covers_bootstrap_schema_tables():
         "cognitive_audit_logs",
         "cognitive_skills",
         "cognitive_reflections",
+        "self_module_proposals",
+        "self_modules",
+        "module_versions",
+        "module_capability_envelopes",
+        "module_control_logs",
+        "surgery_sessions",
+        "evaluation_runs",
+        "module_shadow_runs",
+        "module_health_samples",
+        "module_routes",
+        "self_model_events",
+        "identity_reflection_logs",
+        "cognitive_task_contexts",
     }
 
     assert expected_tables <= set(Base.metadata.tables)

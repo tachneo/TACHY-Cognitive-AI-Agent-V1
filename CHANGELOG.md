@@ -1961,3 +1961,10 @@ Recommended order:
 2. Add a loop mode that is dry-run by default.
 3. Keep live loop disabled unless explicitly approved.
 4. Add logs for each processed message ID.
+## 2026-07-11 — Phase 1: Self-Improvement Control Plane Foundation
+
+- Added the durable self-module control-plane migration (`20260710_0002`) and matching SQLAlchemy models for proposals, modules, versions, capability envelopes, control logs, surgery sessions, evaluation, shadow/health samples, routing, self-model events, identity reflections, and task context.
+- Added bounded JSON/text persistence fields, foreign-key ownership, unique version/policy constraints, status/risk/score checks, and canary percentage constraints.
+- Added pinned runtime and development lock manifests and PyYAML as an explicit dependency.
+- Added schema contract tests and expanded deployment checks to cover all control-plane tables.
+- Verification: focused Phase 1 schema/deployment tests pass (13 tests); fresh Alembic upgrade reaches head and matches ORM columns. The complete suite was started but the runner stopped emitting output at 11%; a clean full-suite rerun remains a release gate before production migration.

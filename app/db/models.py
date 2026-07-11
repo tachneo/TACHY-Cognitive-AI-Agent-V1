@@ -11,7 +11,8 @@ from contextlib import contextmanager
 from typing import Iterator
 
 from sqlalchemy import (
-    BigInteger, Boolean, DateTime, Integer, String, Text, create_engine, func,
+    BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer,
+    Numeric, String, Text, UniqueConstraint, create_engine, func,
 )
 from sqlalchemy.orm import (
     DeclarativeBase, Mapped, Session, mapped_column, sessionmaker,
@@ -258,6 +259,304 @@ class CognitiveRepairIntention(Base):
     last_seen: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     repaired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     repair_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+# ── Self-module control plane (Phase 1) ──────────────────────────
+
+_MODULE_TYPES = (
+    "emotion", "memory", "reasoning", "speech", "tool", "agent", "evaluator",
+    "safety_helper", "business", "erp", "tody", "curriculum", "self_model", "other",
+)
+_RISK_LEVELS = ("low", "medium", "high", "critical")
+_JSON_DEFAULT = "[]"
+
+
+class SelfModuleProposal(Base):
+    __tablename__ = "self_module_proposals"
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    module_key: Mapped[str] = mapped_column(String(120), index=True)
+    module_name: Mapped[str] = mapped_column(String(180))
+    module_type: Mapped[str] = mapped_column(String(80))
+    purpose: Mapped[str] = mapped_column(Text)
+    weakness_detected: Mapped[str] = mapped_column(Text)
+    expected_improvement: Mapped[str] = mapped_column(Text)
+    proposed_by: Mapped[str] = mapped_column(String(50))
+    risk_level: Mapped[str] = mapped_column(String(50))
+    allowed_actions_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    blocked_actions_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    required_tests_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    fallback_module_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    rollback_plan: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(80), default="draft", index=True)
+    evaluation_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    validation_report_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version_counter: Mapped[int] = mapped_column(Integer, default=1)
+    approval_request_id: Mapped[int | None] = mapped_column(
+        _BIGID, ForeignKey("cognitive_approvals.id", ondelete="SET NULL"), nullable=True,
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    __table_args__ = (
+        CheckConstraint(f"module_type IN { _MODULE_TYPES!r}".replace("'", "'"), name="ck_self_module_proposals_module_type"),
+        CheckConstraint("proposed_by IN ('shree','rohit','system')", name="ck_self_module_proposals_proposed_by"),
+        CheckConstraint("risk_level IN ('low','medium','high','critical')", name="ck_self_module_proposals_risk_level"),
+        CheckConstraint("status IN ('draft','spec_created','coded','tested','failed_validation','shadow','approval_pending','approved','canary_5','canary_25','active','rejected','rolled_back')", name="ck_self_module_proposals_status"),
+        CheckConstraint("evaluation_score IS NULL OR (evaluation_score >= 0 AND evaluation_score <= 100)", name="ck_self_module_proposals_evaluation_score"),
+        CheckConstraint("version_counter >= 1", name="ck_self_module_proposals_version_counter"),
+    )
+
+
+class SelfModule(Base):
+    __tablename__ = "self_modules"
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    module_key: Mapped[str] = mapped_column(String(120), unique=True)
+    module_name: Mapped[str] = mapped_column(String(180))
+    module_type: Mapped[str] = mapped_column(String(80))
+    version: Mapped[str] = mapped_column(String(50), default="0.1.0")
+    active_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    status: Mapped[str] = mapped_column(String(80), default="inactive", index=True)
+    sandbox_path: Mapped[str] = mapped_column(Text)
+    live_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    allowed_actions_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    blocked_actions_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    health_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    last_eval_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fallback_module_key: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(50), default="system")
+    version_counter: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    __table_args__ = (
+        CheckConstraint("module_type IN ('emotion','memory','reasoning','speech','tool','agent','evaluator','safety_helper','business','erp','tody','curriculum','self_model','other')", name="ck_self_modules_module_type"),
+        CheckConstraint("status IN ('inactive','shadow','canary_5','canary_25','active','failed','rollback','disabled')", name="ck_self_modules_status"),
+        CheckConstraint("health_score IS NULL OR (health_score >= 0 AND health_score <= 100)", name="ck_self_modules_health_score"),
+        CheckConstraint("last_eval_score IS NULL OR (last_eval_score >= 0 AND last_eval_score <= 100)", name="ck_self_modules_eval_score"),
+        CheckConstraint("version_counter >= 1", name="ck_self_modules_version_counter"),
+    )
+
+
+class ModuleVersion(Base):
+    __tablename__ = "module_versions"
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    module_key: Mapped[str] = mapped_column(String(120), ForeignKey("self_modules.module_key"), index=True)
+    version: Mapped[str] = mapped_column(String(50))
+    code_hash: Mapped[str] = mapped_column(String(128))
+    artifact_hash: Mapped[str] = mapped_column(String(128))
+    spec_path: Mapped[str] = mapped_column(Text)
+    sandbox_path: Mapped[str] = mapped_column(Text)
+    test_path: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(80), default="draft", index=True)
+    evaluation_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    validation_report_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    __table_args__ = (
+        UniqueConstraint("module_key", "version", name="uq_module_versions_key_version"),
+        CheckConstraint("status IN ('draft','testing','passed','failed','shadow','canary','active','archived')", name="ck_module_versions_status"),
+        CheckConstraint("evaluation_score IS NULL OR (evaluation_score >= 0 AND evaluation_score <= 100)", name="ck_module_versions_score"),
+    )
+
+
+class ModuleCapabilityEnvelope(Base):
+    __tablename__ = "module_capability_envelopes"
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    module_key: Mapped[str] = mapped_column(String(120), ForeignKey("self_modules.module_key"), index=True)
+    version: Mapped[str] = mapped_column(String(50))
+    risk_level: Mapped[str] = mapped_column(String(50))
+    allowed_actions_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    blocked_actions_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    requires_approval: Mapped[bool] = mapped_column(Boolean, default=True)
+    filesystem_scope_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    network_scope_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    data_scope_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    approval_request_id: Mapped[int | None] = mapped_column(
+        _BIGID, ForeignKey("cognitive_approvals.id", ondelete="SET NULL"), nullable=True
+    )
+    policy_hash: Mapped[str] = mapped_column(String(128))
+    policy_snapshot_hash: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(32), default="draft", index=True)
+    created_by: Mapped[str] = mapped_column(String(50))
+    valid_from: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    version_counter: Mapped[int] = mapped_column(Integer, default=1)
+    __table_args__ = (
+        UniqueConstraint("module_key", "version", "policy_snapshot_hash", name="uq_module_capability_policy"),
+        CheckConstraint("risk_level IN ('low','medium','high','critical')", name="ck_module_capability_risk"),
+        CheckConstraint("status IN ('draft','active','expired','revoked')", name="ck_module_capability_status"),
+        CheckConstraint("version_counter >= 1", name="ck_module_capability_version_counter"),
+    )
+
+
+class ModuleControlLog(Base):
+    __tablename__ = "module_control_logs"
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    module_key: Mapped[str] = mapped_column(String(120), ForeignKey("self_modules.module_key"), index=True)
+    version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    action: Mapped[str] = mapped_column(String(120))
+    old_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(80))
+    reason: Mapped[str] = mapped_column(Text)
+    approved_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class SurgerySession(Base):
+    __tablename__ = "surgery_sessions"
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    module_key: Mapped[str] = mapped_column(String(120), ForeignKey("self_modules.module_key"), index=True)
+    from_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    to_version: Mapped[str] = mapped_column(String(50))
+    surgery_type: Mapped[str] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(80), default="planned", index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    validation_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    health_before_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    health_after_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rollback_plan: Mapped[str] = mapped_column(Text)
+    started_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(50))
+    policy_snapshot_hash: Mapped[str] = mapped_column(String(128))
+    version_counter: Mapped[int] = mapped_column(Integer, default=1)
+    __table_args__ = (
+        CheckConstraint("surgery_type IN ('create','upgrade','patch','rollback','disable')", name="ck_surgery_type"),
+        CheckConstraint("status IN ('planned','isolated','testing','shadow','canary_5','canary_25','promoted','rolled_back','failed')", name="ck_surgery_status"),
+        CheckConstraint("validation_score IS NULL OR (validation_score >= 0 AND validation_score <= 100)", name="ck_surgery_score"),
+        CheckConstraint("version_counter >= 1", name="ck_surgery_version_counter"),
+    )
+
+
+class EvaluationRun(Base):
+    __tablename__ = "evaluation_runs"
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    eval_name: Mapped[str] = mapped_column(String(180))
+    module_key: Mapped[str] = mapped_column(String(120), ForeignKey("self_modules.module_key"), index=True)
+    version: Mapped[str] = mapped_column(String(50))
+    score: Mapped[float] = mapped_column(Numeric(5, 2))
+    passed: Mapped[bool] = mapped_column(Boolean)
+    failures_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    metrics_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    __table_args__ = (CheckConstraint("score >= 0 AND score <= 100", name="ck_evaluation_runs_score"),)
+
+
+class ModuleShadowRun(Base):
+    __tablename__ = "module_shadow_runs"
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    module_key: Mapped[str] = mapped_column(String(120), ForeignKey("self_modules.module_key"), index=True)
+    version: Mapped[str] = mapped_column(String(50))
+    input_hash: Mapped[str] = mapped_column(String(128))
+    live_output_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    shadow_output_hash: Mapped[str] = mapped_column(String(128))
+    score: Mapped[float] = mapped_column(Numeric(5, 2))
+    diff_json: Mapped[str] = mapped_column(Text, default="{}")
+    safety_flags_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    latency_ms: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    __table_args__ = (
+        CheckConstraint("score >= 0 AND score <= 100", name="ck_module_shadow_runs_score"),
+        CheckConstraint("latency_ms >= 0", name="ck_module_shadow_runs_latency"),
+    )
+
+
+class ModuleHealthSample(Base):
+    __tablename__ = "module_health_samples"
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    module_key: Mapped[str] = mapped_column(String(120), ForeignKey("self_modules.module_key"), index=True)
+    version: Mapped[str] = mapped_column(String(50))
+    health_score: Mapped[float] = mapped_column(Numeric(5, 2))
+    error_rate: Mapped[float] = mapped_column(Numeric(7, 4), default=0)
+    latency_p95_ms: Mapped[int] = mapped_column(Integer, default=0)
+    safety_violation_count: Mapped[int] = mapped_column(Integer, default=0)
+    privacy_leak_detected: Mapped[bool] = mapped_column(Boolean, default=False)
+    output_quality_score: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+    user_correction_severity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prompt_injection_failures: Mapped[int] = mapped_column(Integer, default=0)
+    metrics_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    __table_args__ = (
+        CheckConstraint("health_score >= 0 AND health_score <= 100", name="ck_module_health_score"),
+        CheckConstraint("error_rate >= 0 AND error_rate <= 1", name="ck_module_health_error_rate"),
+        CheckConstraint("latency_p95_ms >= 0", name="ck_module_health_latency"),
+        CheckConstraint("safety_violation_count >= 0 AND prompt_injection_failures >= 0", name="ck_module_health_counts"),
+        CheckConstraint("output_quality_score IS NULL OR (output_quality_score >= 0 AND output_quality_score <= 100)", name="ck_module_health_quality"),
+    )
+
+
+class ModuleRoute(Base):
+    __tablename__ = "module_routes"
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    module_key: Mapped[str] = mapped_column(String(120), ForeignKey("self_modules.module_key"), unique=True)
+    version: Mapped[str] = mapped_column(String(50))
+    previous_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    percentage: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="inactive")
+    policy_snapshot_json: Mapped[str] = mapped_column(Text, default="{}")
+    policy_snapshot_hash: Mapped[str] = mapped_column(String(128))
+    updated_by: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    version_counter: Mapped[int] = mapped_column(Integer, default=1)
+    __table_args__ = (
+        CheckConstraint("percentage IN (0,5,25,100)", name="ck_module_routes_percentage"),
+        CheckConstraint("status IN ('inactive','shadow','canary_5','canary_25','active','quarantined')", name="ck_module_routes_status"),
+        CheckConstraint("version_counter >= 1", name="ck_module_routes_version_counter"),
+    )
+
+
+class SelfModelEvent(Base):
+    __tablename__ = "self_model_events"
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    event: Mapped[str] = mapped_column(String(180))
+    evidence: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Numeric(5, 2))
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    self_state_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    __table_args__ = (CheckConstraint("confidence >= 0 AND confidence <= 100", name="ck_self_model_events_confidence"),)
+
+
+class IdentityReflectionLog(Base):
+    __tablename__ = "identity_reflection_logs"
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    question: Mapped[str] = mapped_column(Text)
+    answer: Mapped[str] = mapped_column(Text)
+    self_state_json: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Numeric(5, 2))
+    consistency_passed: Mapped[bool] = mapped_column(Boolean)
+    review_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    __table_args__ = (CheckConstraint("confidence >= 0 AND confidence <= 100", name="ck_identity_reflection_confidence"),)
+
+
+class CognitiveTaskContext(Base):
+    __tablename__ = "cognitive_task_contexts"
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    task_key: Mapped[str] = mapped_column(String(120), unique=True)
+    goal: Mapped[str] = mapped_column(Text)
+    current_step: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="dormant", index=True)
+    priority: Mapped[int] = mapped_column(Integer, default=5)
+    deadline: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    relevant_memory_refs_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    selected_modules_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    pending_commitments_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    checkpoint_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resume_triggers_json: Mapped[str] = mapped_column(Text, default=_JSON_DEFAULT)
+    affective_state_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_by: Mapped[str] = mapped_column(String(50))
+    last_activated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    version_counter: Mapped[int] = mapped_column(Integer, default=1)
+    __table_args__ = (
+        CheckConstraint("status IN ('active','paused','waiting','dormant','completed','cancelled')", name="ck_cognitive_task_status"),
+        CheckConstraint("priority >= 1 AND priority <= 10", name="ck_cognitive_task_priority"),
+        CheckConstraint("version_counter >= 1", name="ck_cognitive_task_version_counter"),
+    )
 
 
 _engine = None
