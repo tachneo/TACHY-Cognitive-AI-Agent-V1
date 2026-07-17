@@ -4,6 +4,41 @@ This file is the durable project memory for human/developer handoff. Update it
 after every phase so the next session can see what exists, what changed, what
 was verified, and what must happen next.
 
+## 2026-07-17 - TODY AGI Chat Production Hardening: Phase 1
+
+### Completed
+
+- Added durable sanitized TODY AI event logging in `tody_ai_event_logs` for
+  inbound candidate messages, selected reply turns, duplicate skips, outbound
+  send execution, and outbound send failures.
+- Added `tody_attachment_states` to track image/attachment lifecycle state:
+  observed, download attempt, downloaded, vision done, vision unavailable, and
+  pending retry.
+- Added redacted preview + SHA-256 body hash logging so QA and learning can
+  inspect behavior without storing full raw chat bodies, private URLs, API
+  tokens, emails, or phone-like values.
+- Wired the evidence logger into the TODY worker, reply agent, image-analysis
+  path, and approval-gated send executor. Logging is best-effort and cannot
+  break live chat handling if the evidence DB is temporarily unavailable.
+- Added Alembic migration `20260717_0001_tody_ai_event_log.py`.
+
+### Verified
+
+```text
+./.venv/bin/pytest -q tests/test_tody_ai_event_log.py tests/test_tody_chat_capabilities.py tests/test_phase2a_shree_guard_messaging.py tests/test_self_module_schema.py -p no:cacheprovider
+33 passed in 7.16s
+
+./.venv/bin/pytest -q -p no:cacheprovider
+687 passed in 226.31s (0:03:46)
+```
+
+### Next
+
+Phase 2 should consume these evidence tables to generate daily TODY QA
+observations: duplicate claim detection, false "posted/sent" claim detection,
+image failure retry summaries, and repair-intention creation from repeated
+conversation failures.
+
 ## 2026-07-17 - TODY AGI Chat Production Hardening: Phase 0
 
 ### Completed

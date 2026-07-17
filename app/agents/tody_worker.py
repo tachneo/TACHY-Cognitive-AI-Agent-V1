@@ -9,7 +9,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 
-from app.agents import tody_agent
+from app.agents import tody_agent, tody_event_log
 from app.config import get_settings
 from app.memory import dialogue_memory
 from app.safety.audit_logger import log_event
@@ -258,6 +258,26 @@ def _latest_unprocessed_message(conversation_id: int, data: dict | list) -> dict
         if message_id is None or dialogue_memory.was_processed(
                 "tody", conversation_id, message_id):
             continue
+        if attachment:
+            attachment = dict(attachment)
+            attachment.setdefault("source_message_id", message_id)
+            tody_event_log.record_attachment_observed(
+                conversation_id, message_id, attachment)
+        tody_event_log.record_event(
+            "message_observed",
+            conversation_id=conversation_id,
+            message_id=message_id,
+            direction="inbound",
+            actor="tody_worker",
+            status="candidate",
+            body=body,
+            metadata={
+                "sender_username": sender.get("username") if sender else None,
+                "sender_name": sender.get("name") if sender else None,
+                "has_attachment": bool(attachment),
+                "attachment_id": attachment.get("id") if attachment else None,
+            },
+        )
         pending.append({"id": message_id, "body": body,
                         "sender": sender,
                         "attachment": attachment})

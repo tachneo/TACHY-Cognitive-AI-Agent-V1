@@ -261,6 +261,51 @@ class CognitiveRepairIntention(Base):
     repair_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class TodyAIEventLog(Base):
+    """Sanitized TODY chat/action events used for QA and learning evidence."""
+    __tablename__ = "tody_ai_event_logs"
+
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    event_type: Mapped[str] = mapped_column(String(80), index=True)
+    conversation_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    message_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    direction: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    actor: Mapped[str] = mapped_column(String(64), default="system")
+    status: Mapped[str] = mapped_column(String(32), default="observed", index=True)
+    body_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    body_preview: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class TodyAttachmentState(Base):
+    """Latest processing state for TODY attachments, especially vision inputs."""
+    __tablename__ = "tody_attachment_states"
+
+    id: Mapped[int] = mapped_column(_BIGID, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    message_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    attachment_id: Mapped[str] = mapped_column(String(120), index=True)
+    mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="observed", index=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    next_retry_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "conversation_id", "message_id", "attachment_id",
+            name="uq_tody_attachment_state_source",
+        ),
+        CheckConstraint("retry_count >= 0", name="ck_tody_attachment_retry_count"),
+    )
+
+
 # ── Self-module control plane (Phase 1) ──────────────────────────
 
 _MODULE_TYPES = (

@@ -93,6 +93,11 @@ without pulling message history. Configure with:
 TODY_PRESENCE_HEARTBEAT_ENABLED=true
 ```
 
+TODY AI chat evidence is stored in sanitized durable tables:
+`tody_ai_event_logs` and `tody_attachment_states`. They keep redacted previews,
+body hashes, send/vision status, and retry state so Shree can learn from chat
+failures without storing raw secrets or full private chat bodies.
+
 ---
 
 ## Safety & approval tiers (`app/safety/`)

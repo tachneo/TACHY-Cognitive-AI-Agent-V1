@@ -14,7 +14,7 @@ import random
 import threading
 import time
 
-from app.agents import chat_tool_loop, social_policy, tody_social_actions
+from app.agents import chat_tool_loop, social_policy, tody_event_log, tody_social_actions
 from app.brain import behavior_engine
 from app.brain import correction_memory
 from app.brain import autonomous_tasks
@@ -714,6 +714,15 @@ def draft_reply_to_message(
     marked processed alongside `message_id` so nothing is answered twice.
     """
     if dialogue_memory.was_processed("tody", conversation_id, message_id):
+        tody_event_log.record_event(
+            "message_duplicate_skipped",
+            conversation_id=conversation_id,
+            message_id=message_id,
+            direction="inbound",
+            actor="tody_agent",
+            status="skipped",
+            body=message,
+        )
         return {
             "processed": False,
             "duplicate": True,
@@ -723,6 +732,21 @@ def draft_reply_to_message(
         }
     is_guardian = relationship_memory.is_guardian_sender(sender)
     person = relationship_memory.guardian_profile()["name"] if is_guardian else None
+    tody_event_log.record_event(
+        "message_selected_for_reply",
+        conversation_id=conversation_id,
+        message_id=message_id,
+        direction="inbound",
+        actor="tody_agent",
+        status="selected",
+        body=message,
+        metadata={
+            "is_guardian": is_guardian,
+            "sender_username": sender.get("username") if sender else None,
+            "sender_name": sender.get("name") if sender else None,
+            "attachment_count": len(attachments or []),
+        },
+    )
     # IMMEDIATE typing: fire ONE "typing…" ping the instant we pick up the
     # message — BEFORE any extraction/model work — so when Papa is online it
     # feels like a human who starts typing on read, not a bot that goes quiet
@@ -865,16 +889,38 @@ def draft_reply_to_message(
             # only when the explicitly enabled vision adapter is configured.
             for attachment in attachments or []:
                 if str(attachment.get("mime_type", "")).lower().startswith("image/"):
+                    attachment = dict(attachment)
+                    attachment.setdefault("source_message_id", message_id)
+                    source_message_id = attachment.get("source_message_id") or message_id
                     try:
                         from app.vision.tody import analyze_image
+                        tody_event_log.record_attachment_result(
+                            conversation_id, source_message_id, attachment,
+                            status="download_attempt")
                         raw, mime = get_client().download_attachment(
                             attachment, max_bytes=get_settings().tody_vision_max_bytes)
+                        tody_event_log.record_attachment_result(
+                            conversation_id, source_message_id, attachment,
+                            status="downloaded",
+                            metadata={"downloaded_bytes": len(raw), "mime": mime})
                         vision = analyze_image(raw, mime, "Describe the attached image and answer any user request about it. Be explicit about uncertainty.")
                         if vision.get("ok"):
+                            tody_event_log.record_attachment_result(
+                                conversation_id, source_message_id, attachment,
+                                status="vision_done",
+                                metadata={"answer_hash": tody_event_log.hash_value(vision.get("answer"))})
                             context += "\n[VERIFIED IMAGE OBSERVATION]\n" + str(vision.get("answer", ""))[:6000]
                         else:
+                            tody_event_log.record_attachment_result(
+                                conversation_id, source_message_id, attachment,
+                                status="vision_unavailable",
+                                error=str(vision.get("error") or "vision adapter returned not ok"))
                             context += "\n[IMAGE UNAVAILABLE: do not claim to have seen it; explain the limitation.]"
-                    except Exception:
+                    except Exception as exc:
+                        tody_event_log.record_attachment_result(
+                            conversation_id, source_message_id, attachment,
+                            status="pending_retry",
+                            error=f"{type(exc).__name__}: {exc}")
                         context += "\n[IMAGE UNAVAILABLE: do not claim to have seen it; explain the limitation.]"
             if speaker:
                 context += (
@@ -1244,6 +1290,16 @@ def execute_send(approval_id: int, conversation_id: int, body: str,
                                             reply_to_message_id=reply_to_message_id)
         sent_id = _sent_message_id(res)
         dialogue_memory.mark_processed("tody", conversation_id, sent_id)
+        tody_event_log.record_event(
+            "message_send_executed",
+            conversation_id=conversation_id,
+            message_id=sent_id,
+            direction="outbound",
+            actor="tody_agent",
+            status="sent",
+            body=body,
+            metadata={"approval_id": approval_id, "reply_to_message_id": reply_to_message_id},
+        )
         log_event(
             "tody_send_executed",
             detail=(
@@ -1257,6 +1313,15 @@ def execute_send(approval_id: int, conversation_id: int, body: str,
                 "approval_status": completion["status"]}
     except TodyError as e:
         completion = approvals.complete_execution(approval_id, succeeded=False)
+        tody_event_log.record_event(
+            "message_send_failed",
+            conversation_id=conversation_id,
+            direction="outbound",
+            actor="tody_agent",
+            status="failed",
+            body=body,
+            metadata={"approval_id": approval_id, "error": str(e)},
+        )
         log_event(
             "tody_send_failed",
             detail=f"approval_id={approval_id}; error={str(e)}",
@@ -1266,6 +1331,15 @@ def execute_send(approval_id: int, conversation_id: int, body: str,
                 "approval_status": completion["status"]}
     except Exception as e:  # noqa: BLE001 - claimed approvals fail closed
         completion = approvals.complete_execution(approval_id, succeeded=False)
+        tody_event_log.record_event(
+            "message_send_failed",
+            conversation_id=conversation_id,
+            direction="outbound",
+            actor="tody_agent",
+            status="failed",
+            body=body,
+            metadata={"approval_id": approval_id, "error": type(e).__name__},
+        )
         log_event(
             "tody_send_failed",
             detail=f"approval_id={approval_id}; error={type(e).__name__}",

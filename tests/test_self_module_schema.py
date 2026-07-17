@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     Base, IdentityReflectionLog, ModuleRoute, ModuleVersion, SelfModule,
+    TodyAttachmentState,
 )
 
 
@@ -32,6 +33,8 @@ NEW_TABLES = {
     "self_model_events",
     "identity_reflection_logs",
     "cognitive_task_contexts",
+    "tody_ai_event_logs",
+    "tody_attachment_states",
 }
 
 
@@ -81,6 +84,9 @@ def test_critical_uniqueness_contracts_are_declared():
     assert ("module_key",) in _unique_column_sets("self_modules")
     assert ("module_key", "version") in _unique_column_sets("module_versions")
     assert ("module_key",) in _unique_column_sets("module_routes")
+    assert (
+        "conversation_id", "message_id", "attachment_id",
+    ) in _unique_column_sets("tody_attachment_states")
 
 
 def test_module_children_reference_their_parent_records():
@@ -123,6 +129,7 @@ def test_lifecycle_and_bounded_values_have_database_checks():
     assert "percentage" in _check_sql("module_routes")
     assert "priority" in _check_sql("cognitive_task_contexts")
     assert "version_counter" in _check_sql("cognitive_task_contexts")
+    assert "retry_count" in _check_sql("tody_attachment_states")
 
 
 def test_capability_policy_has_auditable_validity_fields():
@@ -195,6 +202,14 @@ def test_bounded_state_values_are_database_enforced():
             module_key="missing", version="1.0.0", percentage=10,
             policy_snapshot_json="{}", policy_snapshot_hash="h",
             updated_by="system",
+        ))
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
+
+        session.add(TodyAttachmentState(
+            conversation_id=135, message_id="m1", attachment_id="a1",
+            retry_count=-1,
         ))
         with pytest.raises(IntegrityError):
             session.commit()
