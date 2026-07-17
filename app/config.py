@@ -113,6 +113,8 @@ class Settings(BaseSettings):
     tody_api_base: str = "https://api.tody.in/api"
     tody_email: str = ""
     tody_password: str = ""
+    tody_username: str = "shree"
+    tody_display_name: str = "Shree"
     tody_token_path: str = "storage/logs/tody_tokens.json"
     tody_fast_reply_enabled: bool = True
     tody_fast_reply_conversation_id: str = ""

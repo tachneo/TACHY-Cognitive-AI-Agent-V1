@@ -90,6 +90,19 @@ def test_social_reply_and_post_and_star():
 def test_social_ignores_plain_chat():
     assert tsa.parse_command("kaise ho tum") is None
     assert tsa.parse_command("good morning") is None
+    assert tsa.parse_command("ispe comment batao kya karna hai") is None
+
+
+def test_social_post_returns_created_post_evidence(monkeypatch):
+    class FakeClient:
+        def create_post(self, body):
+            return {"post": {"id": 321, "body": body}}
+
+    monkeypatch.setattr(tsa, "get_client", lambda: FakeClient())
+    out = tsa.do_post("skill practice report")
+    assert out["ok"] is True
+    assert out["post_id"] == 321
+    assert out["body"] == "skill practice report"
 
 
 def test_social_actions_registered_in_action_engine():

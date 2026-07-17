@@ -10,6 +10,7 @@ import time
 from dataclasses import asdict, dataclass, field
 
 from app.agents import tody_agent
+from app.config import get_settings
 from app.memory import dialogue_memory
 from app.safety.audit_logger import log_event
 
@@ -250,12 +251,15 @@ def _latest_unprocessed_message(conversation_id: int, data: dict | list) -> dict
         attachment = tody_agent._message_attachment(row)
         if not body and not attachment:
             continue
+        sender = tody_agent._message_sender(row)
+        if _is_self_sender(sender):
+            continue
         message_id = row.get("id") or row.get("message_id")
         if message_id is None or dialogue_memory.was_processed(
                 "tody", conversation_id, message_id):
             continue
         pending.append({"id": message_id, "body": body,
-                        "sender": tody_agent._message_sender(row),
+                        "sender": sender,
                         "attachment": attachment})
     if not pending:
         return None
@@ -269,3 +273,31 @@ def _latest_unprocessed_message(conversation_id: int, data: dict | list) -> dict
         "attachments": [p["attachment"] for p in pending if p.get("attachment")],
         "batch_size": len(pending),
     }
+
+
+def _is_self_sender(sender: dict | None) -> bool:
+    """True when the row was sent by Shree's own TODY account.
+
+    Proactive reports and direct sends are already outbound. Re-processing them
+    as inbound messages creates self-reply loops and confusing confirmations.
+    """
+    if not isinstance(sender, dict):
+        return False
+    settings = get_settings()
+    own_usernames = {
+        (settings.tody_username or "").strip().casefold(),
+        "shree",
+    }
+    own_names = {
+        (settings.tody_display_name or "").strip().casefold(),
+        "shree",
+    }
+    own_email = (settings.tody_email or "").strip().casefold()
+    username = str(sender.get("username") or sender.get("tody_username") or "").strip().casefold()
+    name = str(sender.get("name") or sender.get("display_name") or "").strip().casefold()
+    email = str(sender.get("email") or "").strip().casefold()
+    if username and username in own_usernames:
+        return True
+    if name and name in own_names:
+        return True
+    return bool(own_email and email == own_email)

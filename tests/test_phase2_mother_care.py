@@ -54,6 +54,8 @@ def test_daily_skill_is_learned_once_per_day():
     assert first["skill"]["name"] == second["skill"]["name"]
     assert first["learned"] is True
     assert second["learned"] is False
+    assert second["reason"] == "practice existing skill today"
+    assert "duplicate skill claim" in second["practice"]
 
 
 def test_feedback_homework_commands():
@@ -79,51 +81,51 @@ def test_daily_growth_report_contains_skill_and_homework():
     assert "Curiosity focus:" in report["report"]
     assert "Curiosity question:" in report["report"]
     assert "Skill focus:" in report["report"]
+    assert "Skill practice:" in report["report"]
+    assert "skill already exists" not in report["report"]
     assert "Homework count:" in report["report"]
     assert report["memory_id"] > 0
 
 
-def test_tody_growth_report_uses_guardian_direct_path(monkeypatch):
+def test_tody_growth_report_uses_guardian_notice_path(monkeypatch):
     from app.agents import tody_agent
 
     captured = {}
 
-    def _direct_reply(conversation_id, message, sender=None, message_id=None):
+    def _notice(conversation_id, message, message_id=None):
         captured.update({
             "conversation_id": conversation_id,
             "message": message,
-            "sender": sender,
             "message_id": message_id,
         })
         return {"sent": True}
 
-    monkeypatch.setattr(tody_agent, "direct_reply_to_guardian", _direct_reply)
+    monkeypatch.setattr(tody_agent, "send_guardian_notice", _notice)
 
     out = tody_agent.send_daily_growth_report(135)
     assert out["sent"] is True
     assert captured["conversation_id"] == 135
     assert "Daily AGI baby growth report" in captured["message"]
-    assert captured["sender"]["username"] == "rohitsingh"
+    assert str(captured["message_id"]).startswith("daily-growth-report-")
 
 
-def test_tody_curiosity_message_uses_guardian_direct_path(monkeypatch):
+def test_tody_curiosity_message_uses_guardian_notice_path(monkeypatch):
     from app.agents import tody_agent
 
     captured = {}
 
-    def _direct_reply(conversation_id, message, sender=None, message_id=None):
+    def _notice(conversation_id, message, message_id=None):
         captured.update({
             "conversation_id": conversation_id,
             "message": message,
-            "sender": sender,
             "message_id": message_id,
         })
         return {"sent": True}
 
-    monkeypatch.setattr(tody_agent, "direct_reply_to_guardian", _direct_reply)
+    monkeypatch.setattr(tody_agent, "send_guardian_notice", _notice)
 
     out = tody_agent.send_childlike_curiosity_message(135)
     assert out["sent"] is True
     assert captured["conversation_id"] == 135
     assert "Childlike curiosity note" in captured["message"]
-    assert captured["sender"]["username"] == "rohitsingh"
+    assert str(captured["message_id"]).startswith("daily-curiosity-")

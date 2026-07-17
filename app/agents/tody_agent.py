@@ -394,8 +394,11 @@ def _handle_social_action(social: dict) -> str:
     if action == "post":
         if autonomous:
             res = tody_social_actions.do_post(social["body"])
-            return ("Post kar diya ✨" if res.get("ok")
-                    else f"Post nahi kar payi: {res.get('reason')}")
+            if res.get("ok"):
+                suffix = f" (post #{res['post_id']})" if res.get("post_id") else ""
+                preview = str(res.get("body", "")).strip().replace("\n", " ")
+                return f"Post kar diya{suffix}: {preview[:160]}"
+            return f"Post nahi kar payi: {res.get('reason')}"
         proposal = action_engine.propose("tody_post", {"body": social["body"]})
         aid = proposal["approval"]["id"]
         return (f"Ready to post:\n“{social['body']}”\n"
@@ -1282,6 +1285,27 @@ def request_post(body: str) -> dict:
 def send_daily_growth_report(conversation_id: int) -> dict:
     """Generate and send the daily growth report to verified guardian channel."""
     report = daily_growth_report()
+    return send_guardian_notice(
+        conversation_id,
+        report["report"],
+        message_id=f"daily-growth-report-{report['memory_id']}",
+    )
+
+
+def send_guardian_notice(
+    conversation_id: int,
+    body: str,
+    *,
+    message_id: int | str | None = None,
+) -> dict:
+    """Send a system/proactive notice to Rohit's verified chat without routing
+    it through the cognitive reply loop. Proactive reports are outbound facts,
+    not inbound user messages; running them through draft_reply_to_message made
+    Shree answer her own report and caused the "Post kar diya" loop.
+    """
+    text = (body or "").strip()
+    if not text:
+        return {"sent": False, "reason": "empty notice"}
     profile = relationship_memory.guardian_profile()
     sender = {
         "uuid": profile["tody_user_uuid"],
@@ -1289,28 +1313,28 @@ def send_daily_growth_report(conversation_id: int) -> dict:
         "email": profile["email"],
         "name": profile["name"],
     }
-    return direct_reply_to_guardian(
-        conversation_id,
-        report["report"],
-        sender=sender,
-        message_id=f"daily-growth-report-{report['memory_id']}",
-    )
+    if not relationship_memory.is_guardian_sender(sender):
+        return {"sent": False, "reason": "guardian identity is not configured"}
+    queued = request_send(conversation_id, text)
+    approvals.respond(queued["approval"]["id"], approved=True)
+    sent = execute_send(queued["approval"]["id"], conversation_id, text)
+    if sent.get("sent") and message_id is not None:
+        dialogue_memory.mark_processed("tody", conversation_id, message_id)
+    return {
+        "sent": bool(sent.get("sent")),
+        "conversation_id": conversation_id,
+        "message_id": message_id,
+        "notice": True,
+        "send_result": sent,
+    }
 
 
 def send_childlike_curiosity_message(conversation_id: int) -> dict:
     """Send a proactive child-like curiosity note to verified guardian channel."""
     curiosity = childlike_curiosity_message()
-    profile = relationship_memory.guardian_profile()
-    sender = {
-        "uuid": profile["tody_user_uuid"],
-        "username": profile["tody_username"],
-        "email": profile["email"],
-        "name": profile["name"],
-    }
-    return direct_reply_to_guardian(
+    return send_guardian_notice(
         conversation_id,
         curiosity["note"],
-        sender=sender,
         message_id=f"daily-curiosity-{curiosity['memory_id']}",
     )
 

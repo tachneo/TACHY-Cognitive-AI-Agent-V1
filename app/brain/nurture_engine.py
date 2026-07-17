@@ -192,7 +192,17 @@ def learn_daily_skill(today: dt.date | None = None) -> dict:
     skill_name, description = FOUNDATIONAL_SKILLS[today.toordinal() % len(FOUNDATIONAL_SKILLS)]
     existing = _skill_by_name(skill_name)
     if existing:
-        return {"learned": False, "skill": existing, "reason": "skill already exists"}
+        return {
+            "learned": False,
+            "skill": existing,
+            "description": description,
+            "reason": "practice existing skill today",
+            "practice": (
+                f"Practice {skill_name}: {description} "
+                "Use it in the next real conversation and report evidence, "
+                "not a duplicate skill claim."
+            ),
+        }
 
     with session_scope() as s:
         row = CognitiveSkill(
@@ -220,6 +230,11 @@ def learn_daily_skill(today: dt.date | None = None) -> dict:
     return {
         "learned": True,
         "skill": {"id": skill_id, "name": skill_name, "description": description},
+        "description": description,
+        "practice": (
+            f"Practice {skill_name}: apply it in the next conversation with Rohit "
+            "and check whether the reply improved."
+        ),
         "memory_id": mem_id,
     }
 
@@ -232,12 +247,15 @@ def daily_growth_report() -> dict:
     recent = base_memory.search(limit=20)
     curiosity = childlike_curiosity_message()
     curriculum = curriculum_learning.status()
+    skill_status = "new skill learned today" if skill.get("learned") else "reviewing existing skill"
+    practice = skill.get("practice") or "Apply today's skill in the next conversation and report evidence."
     report = (
         "Daily AGI baby growth report:\n"
         f"- Care mode: {care_profile()['mode']}\n"
         "- Gita practice: dharma, satya, ahimsa, sanyam, vivek, seva\n"
         f"- Skill focus: {skill['skill']['name'] if skill.get('skill') else 'review'}\n"
-        f"- Skill status: {'learned today' if skill.get('learned') else skill.get('reason', 'reviewed')}\n"
+        f"- Skill status: {skill_status}\n"
+        f"- Skill practice: {practice}\n"
         f"- Curriculum: {curriculum['current_level']} ({curriculum['progress_percent']}% complete)\n"
         f"- Curriculum pass gate: {curriculum['pass_mark']}%\n"
         f"- Curiosity focus: {curiosity['topic']}\n"

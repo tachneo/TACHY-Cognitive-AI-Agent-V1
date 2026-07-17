@@ -4,6 +4,35 @@ This file is the durable project memory for human/developer handoff. Update it
 after every phase so the next session can see what exists, what changed, what
 was verified, and what must happen next.
 
+## 2026-07-17 - TODY AGI Chat Production Hardening: Phase 0
+
+### Completed
+
+- Stopped proactive guardian reports from routing through the cognitive reply
+  loop. Daily growth and curiosity notices now send as outbound guardian notices
+  instead of becoming self-replied inbound messages.
+- Added worker-side self-message skipping for Shree's own TODY account to avoid
+  recursive replies to daily reports, posts, and proactive notes.
+- Changed duplicate daily skill handling from `skill already exists` to a
+  practice/review status with an explicit evidence-based practice instruction.
+- Tightened TODY social-action parsing so casual `comment` text and phrases
+  like `talk like friend` do not publish posts or trigger reactions.
+- Grounded successful public-post replies with the posted body preview and post
+  id when the TODY API returns one.
+
+### Verified
+
+```text
+./.venv/bin/pytest -q -p no:cacheprovider
+683 passed in 207.37s (0:03:27)
+```
+
+### Next
+
+Phase 1 should add a durable sanitized TODY AI event log and attachment retry
+states so deleted chat rows do not erase the evidence needed for AGI learning
+and production QA.
+
 ## 2026-07-10 - Self-Module Factory Foundation: Phase 0
 
 ### Completed

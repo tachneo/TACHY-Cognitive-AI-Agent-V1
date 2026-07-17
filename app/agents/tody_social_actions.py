@@ -37,7 +37,7 @@ _U2 = r"@?(?P<user2>[A-Za-z0-9_.]{2,40})"
 _RX_REACT = re.compile(
     rf"\b(?:like|react(?:\s+with)?|reaction|heart|thumbs?\s*up|dil|"
     rf"pasand)\b.*?(?:{_EMOJI}\s*)?(?:to|on|pe|par|ka|ke|@)\s*{_U1}"
-    rf"|{_U2}\s*(?:ke|ka|ki)?\s*(?:message|chat|msg)?\s*(?:pe|par|ko)?\s*"
+    rf"|{_U2}\s*(?:ke|ka|ki)\s*(?:message|chat|msg)\s*(?:pe|par|ko)?\s*"
     rf"(?:like|react|heart|dil|pasand)(?:\s+kar[oi]?)?", re.I)
 # "reply @niva: text", "reply to @niva that ...", "@niva ko reply karo: text"
 _RX_REPLY = re.compile(
@@ -45,9 +45,10 @@ _RX_REPLY = re.compile(
     rf"|{_U2}\s*ko\s+reply\s*(?:kar[oi]?)?\s*[:,-]?\s*(?P<body2>.+)", re.I)
 # "star @niva ka message", "@niva ke message ko star karo"
 _RX_STAR = re.compile(rf"\bstar\b.*?{_U1}|{_U2}\s*(?:ka|ke).*?\bstar\b", re.I)
-# "post: text", "comment: text", "status laga: text", "post karo ki text"
+# Explicit public-post grammar only. Casual "comment" is too ambiguous in chat:
+# it often means "reply/comment in this conversation", not publish a TODY post.
 _RX_POST = re.compile(
-    r"\b(?:post|comment|status)\b\s*(?:karo|kar\s+do|laga(?:o|do)?|update)?\s*"
+    r"\b(?:public\s+post|post|status\s+post)\b\s*(?:karo|kar\s+do|laga(?:o|do)?|update)?\s*"
     r"(?:[:,-]|ki|that)?\s*(?P<body>.+)", re.I)
 
 _DEFAULT_EMOJI = "❤️"
@@ -70,8 +71,8 @@ def parse_command(message: str) -> dict | None:
         if body and user:
             return {"action": "reply", "user": user, "body": body[:1000]}
 
-    # post/comment must NOT be a reply (already handled) and needs a body
-    if re.search(r"\b(?:post|comment|status)\b", msg, re.I):
+    # Public post must NOT be a reply (already handled) and needs a body.
+    if re.search(r"\b(?:public\s+post|post|status\s+post)\b", msg, re.I):
         m = _RX_POST.search(msg)
         if m and (m.group("body") or "").strip(" :,-\n"):
             return {"action": "post", "body": m.group("body").strip(" :,-\n")[:2000]}
@@ -196,8 +197,15 @@ def do_post(body: str) -> dict:
     if not text:
         return {"ok": False, "reason": "empty post"}
     try:
-        get_client().create_post(text)
+        created = get_client().create_post(text)
     except TodyError as exc:
         return {"ok": False, "reason": f"tody error: {exc}"}
-    log_event("tody_social_post", risk_tier="high", detail=f"len={len(text)}")
-    return {"ok": True, "body": text}
+    post = created.get("post") if isinstance(created, dict) else None
+    post_id = None
+    if isinstance(post, dict):
+        post_id = post.get("id") or post.get("post_id")
+    if post_id is None and isinstance(created, dict):
+        post_id = created.get("id") or created.get("post_id")
+    log_event("tody_social_post", risk_tier="high",
+              detail=f"post_id={post_id}; len={len(text)}")
+    return {"ok": True, "body": text, "post_id": post_id}

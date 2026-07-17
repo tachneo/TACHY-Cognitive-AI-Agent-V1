@@ -177,3 +177,19 @@ def test_batches_pending_messages_in_order(monkeypatch):
     assert cand["message_id"] == "m3"                       # newest anchors
     assert cand["extra_message_ids"] == ["m1", "m2"]
     assert cand["batch_size"] == 3
+
+
+def test_worker_skips_shrees_own_messages(monkeypatch):
+    from app.agents import tody_worker
+    from app.memory import dialogue_memory
+
+    monkeypatch.setenv("TODY_USERNAME", "shree")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    monkeypatch.setattr(dialogue_memory, "was_processed", lambda *a, **k: False)
+
+    data = {"messages": [
+        {"id": "self-1", "body": "Daily AGI baby growth report", "username": "shree", "sender_name": "Shree"},
+    ]}
+    assert tody_worker._latest_unprocessed_message(135, data) is None
+    get_settings.cache_clear()
