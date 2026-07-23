@@ -357,6 +357,23 @@ def _draft_reply(message: str, band: str, decision: dict,
     # what was just said. Fail-safe (returns "" if disabled or any subsystem
     # breaks); never let the spine break a reply.
     state_block = cognitive_state.prompt_block()
+    # Natural-language reading of THIS message: what he meant + how he feels.
+    # Emotion shapes how she carries herself; the Gita block gives her Papa's
+    # dharmic frame for holding it (satya/ahimsa/sanyam stay absolute).
+    intent_read: dict = {}
+    emotion_block_nl = ""
+    gita_block = ""
+    try:
+        from app.brain import gita_wisdom, natural_intent
+        intent_read = natural_intent.read(
+            message, is_guardian=not _is_social_person(related_person))
+        emotion_block_nl = natural_intent.emotion_directive(intent_read)
+        gita_block = gita_wisdom.prompt_block(
+            emotion=intent_read.get("emotion", "neutral"),
+            intensity=float(intent_read.get("intensity") or 0),
+            context=f"{message} {decision.get('action','')}")
+    except Exception:  # noqa: BLE001 — understanding must never break a reply
+        pass
     intent = (behavior or {}).get("state", {}).get("user_intent")
     capability_block = (
         "YOUR REAL ABILITIES right now (be strictly honest about these):\n"
@@ -422,6 +439,7 @@ def _draft_reply(message: str, band: str, decision: dict,
     prompt = (
         now_block
         + state_block
+        + gita_block
         + capability_block
         + context_block
         + self_block
@@ -433,6 +451,7 @@ def _draft_reply(message: str, band: str, decision: dict,
         f"Learned behavior/style preferences:\n{prefs}\n\n"
         f"Bhagavad Gita dharma check:\n{dharma or {}}\n\n"
         + emotion_block
+        + emotion_block_nl
         + lang_block
         + f"Chosen approach: {decision['chosen']}\n"
     )

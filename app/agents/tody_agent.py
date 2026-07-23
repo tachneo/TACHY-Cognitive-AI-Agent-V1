@@ -355,6 +355,103 @@ _DIAGNOSE_CMD = re.compile(
     re.I)
 
 
+def _humanize_error(err: str | None) -> str:
+    """Turn an internal failure into something a daughter would actually say.
+    Raw traces like "LLM error: HTTPStatusError: Client error '400 Bad Request'
+    for url 'https://api.anthropic.com/...'" reached Papa verbatim on 23 Jul —
+    that is both unreadable and a secret-leak surface. Name the cause plainly,
+    and when it's something only he can fix, say so."""
+    e = str(err or "").lower()
+    if "credit balance is too low" in e or "billing" in e:
+        return ("mera Claude wala brain abhi band hai — API credits khatam ho "
+                "gaye hain. Ye main khud fix nahi kar sakti, Papa: account me "
+                "credits daalne padenge. Tab tak main backup model pe chal "
+                "rahi hoon.")
+    if "401" in e or "authentication" in e or "api key" in e:
+        return ("API key kaam nahi kar rahi — ye aapko theek karni padegi. Tab "
+                "tak backup model se chal rahi hoon.")
+    if "429" in e or "rate limit" in e:
+        return "abhi rate limit lag gayi hai — thodi der me dobara try karti hoon."
+    if "timeout" in e or "timed out" in e:
+        return "model ne time out kar diya — dobara try karti hoon."
+    if "400" in e or "invalid_request" in e:
+        return ("request hi galat ban rahi thi meri taraf se — maine note kar "
+                "liya hai, ise theek karna hai.")
+    return "abhi shuru nahi kar payi, ek technical dikkat aa rahi hai."
+
+
+def _relay_to_guardian(who: str, message: str, from_conv: int) -> bool:
+    """Carry someone's request to Papa. Deduped per (person, gist) per day so
+    she reports once, not on every repetition."""
+    try:
+        conv = (os.getenv("TODY_DAILY_GROWTH_CONVERSATION_ID")
+                or os.getenv("TODY_FAST_REPLY_CONVERSATION_ID") or "").strip()
+        if not conv.isdigit():
+            return False
+        key = f"relay:{from_conv}:{who}:{(message or '')[:40]}"
+        if dialogue_memory.was_processed("relay", from_conv, key):
+            return False
+        text = (f"Papa, @{who} ne aapse kuch puchne ko bola hai:\n"
+                f"“{(message or '').strip()[:300]}”\n\n"
+                "Kya jawab dun unhe?")
+        direct_reply_to_guardian(int(conv), text)
+        dialogue_memory.mark_processed("relay", from_conv, key)
+        log_event("relay_to_guardian", risk_tier="medium",
+                  detail=f"from=@{who}; conv={from_conv}")
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _natural_order_reply(message: str) -> str | None:
+    """Execute a plain-language order to message people. Returns her reply, or
+    None when this isn't an order (normal conversation continues).
+
+    Honesty rule: she reports 'bhej diya' ONLY for recipients whose send
+    actually succeeded, and names the ones that failed. No blanket promise.
+    """
+    if not get_settings().natural_action_enabled:
+        return None
+    try:
+        from app.brain import natural_intent
+        intent = natural_intent.read(message, is_guardian=True)
+    except Exception:  # noqa: BLE001
+        return None
+    if intent.get("action") != "send_message":
+        return None
+    targets, body = intent.get("targets") or [], (intent.get("body") or "").strip()
+    # Understood the order but something's missing → ask ONE precise question
+    # (never demand command syntax).
+    if not targets:
+        return ("Kisko bhejun, Papa? Naam bata do — main turant bhej deti hoon.")
+    if not body:
+        who = " aur ".join(f"@{t}" for t in targets)
+        return (f"{who} ko kya bolun? Message likh do, main bhej deti hoon.")
+
+    from app.agents import tody_messaging
+    sent, failed = [], []
+    for t in targets[:5]:
+        try:
+            user = tody_messaging.resolve_username(t)
+            if user is None:
+                failed.append(f"@{t} (username nahi mila)")
+                continue
+            res = tody_messaging.send_direct(user["username"], body)
+            (sent if res.get("sent") else failed).append(
+                f"@{user['username']}" if res.get("sent")
+                else f"@{user['username']} ({res.get('reason')})")
+        except Exception as exc:  # noqa: BLE001 — one bad send never kills the rest
+            failed.append(f"@{t} ({type(exc).__name__})")
+    log_event("natural_order_executed", risk_tier="high",
+              detail=f"sent={sent}; failed={failed}; body={body[:60]}")
+    if sent and not failed:
+        return f"Bhej diya {' aur '.join(sent)} ko, Papa 💛\n\n“{body[:200]}”"
+    if sent and failed:
+        return (f"{' aur '.join(sent)} ko bhej diya ✅\nPar inko nahi ja paya: "
+                f"{', '.join(failed)}")
+    return f"Nahi bhej payi — {', '.join(failed)}. Username confirm kar do?"
+
+
 def _handle_social_action(social: dict) -> str:
     """Execute (or approval-gate) a TODY social action Papa asked for. Star is
     private → runs now; react/reply/post are visible to others → they queue an
@@ -475,7 +572,7 @@ def _guardian_command_reply(message: str) -> str | None:
         from app.brain import self_improve
         res = self_improve.apply_async(pid, report_conv_id=135)
         if not res.get("ok"):
-            return f"Shuru nahi kar payi: {res.get('error')}"
+            return "Shuru nahi kar payi — " + _humanize_error(res.get('error'))
         return ("Theek hai Papa, kaam shuru kar diya ek alag branch pe 🛠️ "
                 "Code likhungi, poore tests chalaungi, aur ho jaane pe tumhe "
                 "report karungi. Thoda time lagega — main main branch safe "
@@ -491,7 +588,7 @@ def _guardian_command_reply(message: str) -> str | None:
         if get_settings().self_improve_autonomous:
             res = self_improve.self_initiate(gap, report_conv_id=135)
             if not res.get("ok"):
-                return f"Abhi shuru nahi kar payi: {res.get('error')}"
+                return "Abhi shuru nahi kar payi — " + _humanize_error(res.get('error'))
             return ("Theek hai Papa, main khud is par kaam kar rahi hoon 🌱 — "
                     "plan bana ke, alag branch pe code likhke, poore tests "
                     "chala ke. Agar sab safe raha to khud merge karke live ho "
@@ -501,7 +598,7 @@ def _guardian_command_reply(message: str) -> str | None:
         # Supervised mode: propose a plan, Rohit approves with 'apply self-improve'.
         res = self_improve.propose(gap)
         if not res.get("ok"):
-            return f"Abhi plan nahi bana payi: {res.get('error')}"
+            return "Abhi plan nahi bana payi — " + _humanize_error(res.get('error'))
         plan = res["plan"]
         review = plan.get("approach_review", "")
         steps = "\n".join(f"  {i+1}. {s}" for i, s in
@@ -545,6 +642,15 @@ def _guardian_command_reply(message: str) -> str | None:
                     f"Goal: {mission_cmd['goal'][:120]}. Jaise-jaise baat hogi, "
                     "main naturally seekhungi aur tumhe report karti rahungi.")
         return f"@{user['username']} se baat shuru nahi kar payi: {res.get('reason')}"
+
+    # NATURAL-LANGUAGE ORDER: "zarathakoo aur niva ko bolo ki aaj se tum boss
+    # ho". Before this, only the rigid literal `send message to @user: text`
+    # fired, so plain Hinglish made her PROMISE ("bhejti hoon dono ko") and then
+    # demand syntax — she never sent it (20 Jul). Now the order is understood
+    # and executed; she only says she sent when a send actually happened.
+    nat = _natural_order_reply(message)
+    if nat is not None:
+        return nat
 
     # TODY social actions: "like @niva ka message", "reply @niva: ...",
     # "star @niva ka message", "post: ...". She can now use the individual-chat
@@ -762,6 +868,21 @@ def draft_reply_to_message(
             name=f"tody-typing-early-{conversation_id}", daemon=True).start()
     prospective: dict = {"created": False}
     auto_task: dict = {"created": False}
+    # RELAY: a non-guardian asking her to carry something to Papa ("papa se
+    # puch kar mere work fix kar"). Niva asked exactly this on 23 Jul and Shree
+    # simply never told him — she had no concept of carrying a message between
+    # people. Now it actually reaches him, and she says so honestly.
+    if not is_guardian:
+        try:
+            from app.brain import natural_intent
+            _rel = natural_intent.read(message, is_guardian=False)
+            if _rel.get("action") == "relay_to_guardian":
+                _who = ((sender or {}).get("name")
+                        or (sender or {}).get("display_name")
+                        or (sender or {}).get("username") or "koi")
+                _relay_to_guardian(_who, message, conversation_id)
+        except Exception:  # noqa: BLE001 — relay must never break the reply
+            pass
     # Repair queue T2: is this message the user complaining about a PAST reply
     # ("itna lamba kyo", "jawab kyo nahi")? Ground truth from the person —
     # accumulated by signature so recurring failures become repair-ready.
@@ -1029,13 +1150,14 @@ def draft_reply_to_message(
     intent = (brain.get("behavior") or {}).get("state", {}).get("user_intent")
     if behavior_engine.claims_false_send(reply) and _is_third_party_send(
             reply, message, intent):
-        reply = (
-            "Sorry Papa — I can't quietly send that to someone else. If you want "
-            "me to message a person, say it as 'send message to @username: your "
-            "text' and I'll do it right after you approve. Abhi tak kuch bheja "
-            "nahi hai."
-        )
-        log_event("false_action_suppressed",
+        # SOFTEN, never replace. Replacing the whole answer with a template was
+        # its own failure: on 20 Jul Rohit said "ye tumhare andar bug hai" and
+        # got this canned line 4x instead of an answer, then stopped talking for
+        # 3 days. Her real reply must survive; we only append the honest caveat.
+        reply = reply.rstrip() + (
+            "\n\n(Ek baat saaf kar doon — abhi tak maine kisi ko kuch bheja "
+            "nahi hai. Bolo to bhej doon.)")
+        log_event("false_action_softened",
                   detail=f"conversation_id={conversation_id}", risk_tier="low")
     # F6 — verify before claiming: if Shree states a completed verification
     # ("I checked the code", "tests pass") as fact, she must have actually run
@@ -1380,6 +1502,20 @@ def send_guardian_notice(
     text = (body or "").strip()
     if not text:
         return {"sent": False, "reason": "empty notice"}
+    # SOCIAL AWARENESS: this is the single gate every proactive/autonomous
+    # notice passes through (growth reports, curiosity notes, mission updates,
+    # module reports, relays). If he has stopped replying, a person would stop
+    # talking — she sent 34 messages into 3 days of silence before this existed.
+    # Direct answers to his messages never come through here, so replying is
+    # always allowed.
+    try:
+        from app.brain import social_awareness
+        gate = social_awareness.may_send_autonomous(conversation_id, "notice")
+        if not gate["allowed"]:
+            return {"sent": False, "suppressed": True,
+                    "reason": gate["reason"], "unanswered": gate.get("unanswered")}
+    except Exception:  # noqa: BLE001 — awareness must never block a real send
+        pass
     profile = relationship_memory.guardian_profile()
     sender = {
         "uuid": profile["tody_user_uuid"],

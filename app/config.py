@@ -208,6 +208,19 @@ class Settings(BaseSettings):
     # daily tick scans and logs only (report mode). Default off: opt in.
     self_heal_daily: bool = False
 
+    # Natural-language understanding (Phase 3F) — read what a human MEANT
+    # (task/command/order/relay + emotion) instead of requiring rigid command
+    # syntax. Fixes: "X ko bolo ki Y" became a promise she couldn't keep.
+    natural_intent_enabled: bool = True
+    # Act on a clearly-understood order without demanding command syntax.
+    natural_action_enabled: bool = True
+    # Gita/Vedic grounding for emotion regulation and decisions (Rohit's core
+    # reference). Shapes tone/priority only — never overrides truth or safety.
+    gita_wisdom_enabled: bool = True
+    # Social awareness: stop autonomous broadcasting after N unanswered msgs.
+    social_awareness_enabled: bool = True
+    social_silence_threshold: int = 2
+
     # Repair queue (Phase 3A, metacognitive loop) — evidence-tiered accumulator
     # of her own failure signatures (guardian corrections > conversational
     # ground truth > system events > LLM self-critique). Pure logging + status

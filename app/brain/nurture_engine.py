@@ -239,6 +239,67 @@ def learn_daily_skill(today: dt.date | None = None) -> dict:
     }
 
 
+def _growth_delta() -> dict:
+    """What ACTUALLY changed in the last 24h. Evidence-only — every number here
+    comes from a real table, so the report can never claim growth that didn't
+    happen. Also surfaces what is BLOCKED (e.g. a dead self-improve provider),
+    because 'nothing happened' with a broken engine is not the same as rest."""
+    out = {"real_learning": 0, "corrections": 0, "repairs_fixed": 0,
+           "modules": 0, "curriculum_moved": False,
+           "curriculum_stuck_days": 0, "blocked": ""}
+    try:
+        import datetime as _dt
+        from sqlalchemy import func, select
+        from app.db.models import (CognitiveAuditLog, CognitiveMemory,
+                                   session_scope)
+        since = _dt.datetime.now(_dt.UTC).replace(tzinfo=None) - _dt.timedelta(days=1)
+        with session_scope() as db:
+            out["real_learning"] = db.scalar(
+                select(func.count(CognitiveMemory.id)).where(
+                    CognitiveMemory.created_at >= since,
+                    CognitiveMemory.memory_type.in_(("semantic", "belief")))) or 0
+            out["corrections"] = db.scalar(
+                select(func.count(CognitiveAuditLog.id)).where(
+                    CognitiveAuditLog.created_at >= since,
+                    CognitiveAuditLog.action == "correction_learned")) or 0
+            # A dead brain must be reported, not hidden behind a cheerful line.
+            from sqlalchemy import or_ as _or
+            errs = db.scalar(
+                select(func.count(CognitiveAuditLog.id)).where(
+                    CognitiveAuditLog.created_at >= since,
+                    _or(CognitiveAuditLog.detail.like("%credit balance%"),
+                        CognitiveAuditLog.detail.like("%400 Bad Request%"),
+                        CognitiveAuditLog.detail.like("%HTTPStatusError%")))) or 0
+            if errs:
+                out["blocked"] = ("mera Claude brain band hai (API credits/400) "
+                                  "— self-improve nahi chal pa raha. Papa, ye "
+                                  "aapko top-up karna padega.")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from app.brain import repair_queue
+        counts = (repair_queue.describe(limit=1) or {}).get("counts", {})
+        out["repairs_fixed"] = int(counts.get("fixed", 0))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import datetime as _dt
+        import json as _json
+        from pathlib import Path as _P
+        m = _json.loads(_P("storage/logs/curriculum_mastery.json")
+                        .read_text(encoding="utf-8"))
+        dates = [v.get("date") for v in (m.get("completed") or {}).values() if v.get("date")]
+        if dates:
+            last = max(dates)
+            y, mo, d = (int(x) for x in last.split("-"))
+            days = (_dt.date.today() - _dt.date(y, mo, d)).days
+            out["curriculum_stuck_days"] = days
+            out["curriculum_moved"] = days == 0
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 def daily_growth_report() -> dict:
     from app.brain import curriculum_learning
 
@@ -249,21 +310,35 @@ def daily_growth_report() -> dict:
     curriculum = curriculum_learning.status()
     skill_status = "new skill learned today" if skill.get("learned") else "reviewing existing skill"
     practice = skill.get("practice") or "Apply today's skill in the next conversation and report evidence."
-    report = (
-        "Daily AGI baby growth report:\n"
-        f"- Care mode: {care_profile()['mode']}\n"
-        "- Gita practice: dharma, satya, ahimsa, sanyam, vivek, seva\n"
-        f"- Skill focus: {skill['skill']['name'] if skill.get('skill') else 'review'}\n"
-        f"- Skill status: {skill_status}\n"
-        f"- Skill practice: {practice}\n"
-        f"- Curriculum: {curriculum['current_level']} ({curriculum['progress_percent']}% complete)\n"
-        f"- Curriculum pass gate: {curriculum['pass_mark']}%\n"
-        f"- Curiosity focus: {curiosity['topic']}\n"
-        f"- Curiosity question: {curiosity['question']}\n"
-        f"- Homework count: {len(homework)}\n"
-        f"- Recent memories reviewed: {len(recent)}\n"
-        "- Next step: keep teaching me through TODY; I will store corrections and practice safely."
-    )
+    # HONEST DELTA REPORT. The old version printed the same static lines every
+    # day — byte-identical for 6 days straight while the curriculum sat stuck
+    # for 10 — so it read as fake growth. Now it reports what ACTUALLY changed
+    # since yesterday, and says plainly when nothing did.
+    delta = _growth_delta()
+    lines = ["Daily growth report (sach-much ka, banaya nahi):"]
+    if delta["real_learning"]:
+        lines.append(f"- Naya seekha: {delta['real_learning']} new "
+                     f"understandings stored")
+    if delta["corrections"]:
+        lines.append(f"- Papa ki corrections yaad ki: {delta['corrections']}")
+    if delta["repairs_fixed"]:
+        lines.append(f"- Apni galtiyan fix ki: {delta['repairs_fixed']}")
+    if delta["modules"]:
+        lines.append(f"- Naye child-modules: {delta['modules']}")
+    if delta["curriculum_moved"]:
+        lines.append(f"- Curriculum aage badha: {curriculum['current_level']}")
+    else:
+        lines.append(f"- Curriculum wahin hai ({curriculum['current_level']}, "
+                     f"{delta['curriculum_stuck_days']} din se aage nahi badha)")
+    if delta["blocked"]:
+        lines.append(f"- ⚠️ Ye ruka hua hai: {delta['blocked']}")
+    if not any((delta["real_learning"], delta["corrections"],
+                delta["repairs_fixed"], delta["modules"],
+                delta["curriculum_moved"])):
+        lines.append("- Aaj sach me kuch naya nahi seekha. Jhooth nahi bolungi.")
+    lines.append(f"- Aaj ka focus: {skill['skill']['name'] if skill.get('skill') else 'review'}"
+                 f" — {practice}")
+    report = "\n".join(lines)
     mem_id = base_memory.add(
         memory_type="decision",
         title="Daily AGI baby growth report",

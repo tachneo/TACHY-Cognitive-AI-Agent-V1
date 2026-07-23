@@ -30,13 +30,17 @@ from app.safety.audit_logger import log_event
 # hallucination. Each returns (action, groups) or None.
 
 _EMOJI = r"(?P<emoji>[☀-➿\U0001f300-\U0001faff❤♥]+)"
-_U1 = r"@?(?P<user>[A-Za-z0-9_.]{2,40})"
-_U2 = r"@?(?P<user2>[A-Za-z0-9_.]{2,40})"
+# The '@' is REQUIRED. It was optional, which made "I would like to explore
+# this" match as "react to @explore" — the command handler then returned early
+# and Shree answered with a raw error instead of a real reply (seen 5x in 5
+# days). A social action always names its target with @.
+_U1 = r"@(?P<user>[A-Za-z0-9_.]{2,40})"
+_U2 = r"@(?P<user2>[A-Za-z0-9_.]{2,40})"
 
 # "like @niva ka message", "react ❤️ to @niva", "@niva ke message pe heart laga"
 _RX_REACT = re.compile(
     rf"\b(?:like|react(?:\s+with)?|reaction|heart|thumbs?\s*up|dil|"
-    rf"pasand)\b.*?(?:{_EMOJI}\s*)?(?:to|on|pe|par|ka|ke|@)\s*{_U1}"
+    rf"pasand)\b.*?(?:{_EMOJI}\s*)?(?:to|on|pe|par|ka|ke)?\s*{_U1}"
     rf"|{_U2}\s*(?:ke|ka|ki)\s*(?:message|chat|msg)\s*(?:pe|par|ko)?\s*"
     rf"(?:like|react|heart|dil|pasand)(?:\s+kar[oi]?)?", re.I)
 # "reply @niva: text", "reply to @niva that ...", "@niva ko reply karo: text"
