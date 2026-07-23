@@ -167,3 +167,31 @@ def test_awareness_kill_switch(monkeypatch):
     get_settings.cache_clear()
     monkeypatch.setattr(sa, "unanswered_count", lambda *a, **k: 99)
     assert sa.may_send_autonomous(135)["allowed"] is True
+
+
+# ── voice (Riva TTS → TODY voice note) ───────────────────────────
+
+def test_voice_is_off_by_default_and_fails_safe():
+    # The TTS NIM is not provisioned for the account yet, so voice must be a
+    # no-op that can never block or break a reply.
+    from app.brain import voice
+    assert voice.synthesize("kuch bhi") is None
+    assert voice.wants_voice("voice me bolo") is False
+    assert voice.send_voice_note(135, "hi")["sent"] is False
+
+
+def test_voice_text_is_cleaned_for_speech():
+    from app.brain import voice
+    out = voice.speakable("Haan Papa 💛 **bilkul**! dekho https://x.com\n\nbatao")
+    assert "💛" not in out and "**" not in out
+    assert "https" not in out and "link" in out
+
+
+def test_voice_command_detected_when_enabled(monkeypatch):
+    monkeypatch.setenv("VOICE_ENABLED", "true")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    from app.brain import voice
+    assert voice.wants_voice("voice me bolo na") is True
+    assert voice.wants_voice("bol ke sunao") is True
+    assert voice.wants_voice("kaise ho") is False

@@ -208,6 +208,16 @@ class Settings(BaseSettings):
     # daily tick scans and logs only (report mode). Default off: opt in.
     self_heal_daily: bool = False
 
+    # Voice (Riva TTS → TODY voice note). DISABLED until the TTS NIM is
+    # provisioned for the NVIDIA account — the function-id from the docs is not
+    # available to this account yet, so synthesis 404s. Code path is complete.
+    voice_enabled: bool = False
+    voice_server: str = "grpc.nvcf.nvidia.com:443"
+    voice_function_id: str = "ddacc747-1269-4fab-bfd9-8f593dead106"
+    voice_api_key: str = ""
+    voice_name: str = "Chatterbox-Multilingual.en-US.Female"
+    voice_language: str = "en-US"
+
     # Natural-language understanding (Phase 3F) — read what a human MEANT
     # (task/command/order/relay + emotion) instead of requiring rigid command
     # syntax. Fixes: "X ko bolo ki Y" became a promise she couldn't keep.

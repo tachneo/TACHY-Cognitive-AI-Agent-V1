@@ -13,3 +13,4 @@ PyYAML>=6.0            # versioned golden/evaluation case files
 # optional (enable as phases land)
 # redis>=5.0           # working memory
 # sentence-transformers # semantic/vector memory
+nvidia-riva-client
