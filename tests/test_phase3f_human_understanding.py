@@ -29,6 +29,34 @@ def test_plain_language_order_is_understood(msg, targets):
     assert r["body"], "the text to send must be extracted"
 
 
+@pytest.mark.parametrize("msg,body", [
+    ("niva ko message kar do ki report bhejo", "report bhejo"),
+    ("niva ko message karke bolo ki kal aana", "kal aana"),
+    ("tse ko bolo ki kal call karenge", "kal call karenge"),
+])
+def test_verb_forms_do_not_leak_into_body(msg, body):
+    # "message kar do ki X" / "message karke bolo ki X" split mid-verb and left
+    # "do ki X" / "bolo ki X" as the message text.
+    assert ni.read(msg, is_guardian=True)["body"] == body
+
+
+def test_permission_question_never_sends_guessed_text():
+    # 23 Jul, the real incident: "username @tse ko message kar sakti ho ? or
+    # janne ki kosisi karo ki wo kya karte hai" — she split at "kar" and mailed
+    # the REST OF HIS OWN SENTENCE ("sakti ho ? or janne ki...") to the @TSE
+    # business account. Asking IF she can, or describing a goal, must never
+    # produce a guessed body — she asks instead.
+    r = ni.read("username @tse ko message kar sakti ho ? or janne ki kosisi "
+                "karo ki wo kya karte hai", is_guardian=True)
+    assert r["targets"] == ["tse"]
+    assert r["body"] == "", "must NOT invent/echo a body — must ask"
+
+
+def test_goal_style_body_is_not_pasted():
+    r = ni.read("niva ko bolo ki pata karo wo kya kar rahi hai", is_guardian=True)
+    assert r["body"] == ""  # a goal for HER, not text to forward
+
+
 def test_vague_order_still_recognised_as_order():
     # "tum dono ko message karke bolo" — an order with missing names. She must
     # treat it as an order (and ask who), not as chitchat.

@@ -1148,8 +1148,13 @@ def draft_reply_to_message(
     # off-topic "message @username" template, which is exactly why Papa's
     # "why did the reminder fail?" got an irrelevant answer on 11 Jul.
     intent = (brain.get("behavior") or {}).get("state", {}).get("user_intent")
-    if behavior_engine.claims_false_send(reply) and _is_third_party_send(
-            reply, message, intent):
+    # Deterministic command paths (natural-language orders, social actions)
+    # have ALREADY performed the send, so their "bhej diya" is TRUE. Appending
+    # the caveat there produced a self-contradiction in one message:
+    # "Bhej diya @TSE ko … (abhi tak maine kisi ko kuch bheja nahi hai)".
+    _already_acted = bool(brain.get("guardian_command"))
+    if (not _already_acted) and behavior_engine.claims_false_send(reply) \
+            and _is_third_party_send(reply, message, intent):
         # SOFTEN, never replace. Replacing the whole answer with a template was
         # its own failure: on 20 Jul Rohit said "ye tumhare andar bug hai" and
         # got this canned line 4x instead of an answer, then stopped talking for

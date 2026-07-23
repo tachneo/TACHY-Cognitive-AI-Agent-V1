@@ -59,9 +59,28 @@ _EMOTION_CUES: tuple[tuple[str, tuple[str, ...]], ...] = (
 _RX_TELL = re.compile(
     r"(?P<who>(?:@?[A-Za-z0-9_.]+(?:\s*(?:aur|and|,|&)\s*@?[A-Za-z0-9_.]+)*))"
     r"\s*(?:ko|to)\s+"
-    r"(?:message\s*(?:kar(?:ke)?|karo|kardo|bhejo|bhej\s*do)?|bolo|bol\s*do|"
-    r"batao|bata\s*do|keh\s*do|kaho|inform\s*karo|tell|send)"
+    # Longest forms FIRST — alternation is first-match, so "kar do" must be
+    # tried before "kar", else "message kar do ki X" leaves "do ki X" as body.
+    r"(?:message\s*(?:kar\s*do|kardo|kar(?:ke)?|karo|bhej\s*do|bhejo)?|"
+    r"bol\s*do|bolo|bata\s*do|batao|keh\s*do|kaho|inform\s*karo|tell|send)"
+    # NOT followed by a permission auxiliary: "message kar sakti ho?" means
+    # "CAN you message" — a question, not "message kar[o] ki <text>". Without
+    # this she split mid-verb and mailed the rest of Rohit's own sentence
+    # ("sakti ho ? or janne ki koshish karo...") to the @TSE business account.
+    r"(?!\s*(?:sakt[iaeo]|sako?g[ie]|pao?g[ie]|paa?t[ie]|paogi|payegi)\b)"
+    # Verbs chain in Hinglish: "message karke bolo ki X", "bhej ke bata do ki X".
+    r"(?:\s*(?:bol\s*do|bolo|bata\s*do|batao|keh\s*do|kehna|kaho|bolna))?"
     r"\s*(?:ki|that|:|-)?\s*(?P<body>.*)$", re.I | re.S)
+# "kya tum X ko message kar sakti ho?" — asking IF she can, not an order with
+# text. Treat as an order whose body is still unknown → she asks what to send.
+_RX_PERMISSION = re.compile(
+    r"\b(?:kar\s*(?:sakt[iaeo]|sako?g[ie]|pao?g[ie])|can\s+you|could\s+you|"
+    r"kar\s*paogi|bhej\s*sakt[iaeo])\b", re.I)
+# Body that is really an instruction TO HER (a goal), not literal message text.
+# "janne ki koshish karo ki wo kya karte hai" is a task, not something to paste.
+_RX_INSTRUCTION_BODY = re.compile(
+    r"\b(?:koshish|kosisi|janne|jaan\s*ne|pata\s*(?:karo|lagao)|find\s*out|"
+    r"puch\s*(?:kar|lo|na)|malum\s*karo|dekho\s+ki|check\s*karo)\b", re.I)
 # "message karke bolo" / "sabko bolo" without explicit names
 _RX_TELL_VAGUE = re.compile(
     r"\b(?:message\s*kar(?:ke)?|bolo|bhejo|bhej\s*do|inform|tell\s+them)\b", re.I)
@@ -127,6 +146,12 @@ def deterministic(message: str, *, is_guardian: bool) -> dict | None:
     if m and is_guardian:
         targets = _clean_targets(m.group("who"))
         body = (m.group("body") or "").strip(" :,-\n")
+        # Never paste his own instruction as the message. If he asked whether
+        # she CAN message someone, or described a GOAL ("find out what they
+        # do") rather than giving text, the body is unknown — she must ask,
+        # not guess. Sending a guessed body to a real person is unrecoverable.
+        if _RX_PERMISSION.search(msg) or _RX_INSTRUCTION_BODY.search(body):
+            body = ""
         if targets:
             return {"kind": "order", "action": "send_message",
                     "targets": targets, "body": body,
