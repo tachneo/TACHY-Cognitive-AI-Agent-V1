@@ -309,9 +309,12 @@ def _pool_template_kwargs(model: str) -> dict | None:
 # Interactive purposes get a short budget: a queued model fails fast and the
 # caller's fallback chain answers. Vision/background can afford to wait.
 _POOL = {
-    "chat":   ("chat_nvidia_model", "chat_nvidia_key", 8192, 30.0),
-    "social": ("social_nvidia_model", "social_nvidia_key", 4096, 30.0),
-    "light":  ("light_nvidia_model", "light_nvidia_key", 2048, 20.0),
+    # First-token budgets tightened 23 Jul for realtime feel: a queued pool
+    # model must fail FAST so the chain reaches a healthy one, instead of the
+    # human watching "typing…" for 20-30s per message.
+    "chat":   ("chat_nvidia_model", "chat_nvidia_key", 8192, 12.0),
+    "social": ("social_nvidia_model", "social_nvidia_key", 4096, 12.0),
+    "light":  ("light_nvidia_model", "light_nvidia_key", 2048, 8.0),
     "vision": ("vision_nvidia_model", "vision_nvidia_key", 8192, 240.0),
 }
 _pool_cache: dict[str, Provider] = {}
@@ -336,6 +339,48 @@ def pool_provider(purpose: str) -> Provider | None:
             chat_template_kwargs=_pool_template_kwargs(model),
             read_timeout=first_token_budget)
     return _pool_cache[cache_key]
+
+
+# ── Circuit breaker ──────────────────────────────────────────────
+# A dead provider must not be retried on every message. Anthropic (credits
+# exhausted) was failing twice per reply, and queued NVIDIA pool models were
+# burning their full timeout each time — seconds of pure waste on every turn.
+# After N consecutive failures a provider is skipped for a cooling period, so
+# the reply path goes straight to something that works.
+_FAIL_THRESHOLD = 2
+_COOLDOWN_S = 900.0   # 15 min: a dead provider is re-tested rarely, so the
+                      # user rarely eats a timeout, but recovery is automatic
+                      # once credits/queues are restored.
+_breaker: dict[str, dict] = {}
+
+
+def is_healthy(name: str) -> bool:
+    st = _breaker.get(name)
+    if not st or st["fails"] < _FAIL_THRESHOLD:
+        return True
+    import time as _t
+    if _t.time() - st["opened_at"] >= _COOLDOWN_S:
+        st["fails"] = 0          # half-open: let one request try again
+        return True
+    return False
+
+
+def record_failure(name: str) -> None:
+    import time as _t
+    st = _breaker.setdefault(name, {"fails": 0, "opened_at": 0.0})
+    st["fails"] += 1
+    if st["fails"] >= _FAIL_THRESHOLD:
+        st["opened_at"] = _t.time()
+
+
+def record_success(name: str) -> None:
+    if name in _breaker:
+        _breaker[name] = {"fails": 0, "opened_at": 0.0}
+
+
+def breaker_state() -> dict:
+    return {k: {"fails": v["fails"], "healthy": is_healthy(k)}
+            for k, v in _breaker.items()}
 
 
 def get_provider() -> Provider:

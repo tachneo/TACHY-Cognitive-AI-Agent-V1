@@ -509,25 +509,45 @@ def _draft_reply(message: str, band: str, decision: dict,
     # Provider fallback CHAIN: primary chat model (Claude) → default provider
     # (NVIDIA) → offline. So a Claude 429/timeout never drops her to the dumb
     # offline reply while a real backup model is available.
-    chain = []
-    for prov in (_reply_provider(related_person), _get_chat_provider(),
-                 pool_provider("chat"), get_provider()):
+    from app.llm import provider as _P
+    chain, skipped = [], []
+    # ORDER MATTERS for perceived realtime-ness. Measured 23 Jul: anthropic
+    # 0.9s-FAIL (credits), deepseek 18.8s, glm 30s-timeout, nemotron 2.3s. The
+    # default provider is the fastest healthy one, so it goes right after the
+    # tier-specific choice — the heavy pool models are last resort, not first.
+    for prov in (_reply_provider(related_person), get_provider(),
+                 _get_chat_provider(), pool_provider("chat")):
         if prov is None:
             continue
         name = getattr(prov, "name", "llm")
         if name == "heuristic":
             continue
-        if all(getattr(p, "name", "") != name for p in chain):
-            chain.append(prov)
+        if any(getattr(p, "name", "") == name for p in chain):
+            continue
+        # SPEED: skip providers the circuit breaker has marked dead. Retrying a
+        # provider with exhausted credits (or a queued model that will time out)
+        # on every single message added seconds of pure waste per reply.
+        if not _P.is_healthy(name):
+            skipped.append(name)
+            continue
+        chain.append(prov)
+    # Never end up with nothing: if everything is cooling down, try them anyway.
+    if not chain:
+        chain = [p for p in (_get_chat_provider(), get_provider())
+                 if p is not None and getattr(p, "name", "") != "heuristic"]
     for i, prov in enumerate(chain):
+        _pname = getattr(prov, "name", "llm")
         try:
             reply = prov.complete(system, prompt, max_tokens=max_tokens)
         except Exception:  # this model is down (429/timeout) → try the next
+            _P.record_failure(_pname)   # trip the breaker so we stop paying for it
             continue
         # An empty reply: try the next real model if there is one; otherwise let
         # the safety finalizer turn it into a warm line (never the dumb offline).
         if not (reply or "").strip() and i < len(chain) - 1:
+            _P.record_failure(_pname)
             continue
+        _P.record_success(_pname)
         if behavior and behavior.get("enabled"):
             reply = behavior_engine.humanize(reply, chat=(channel == "chat"))
         reply = reply_safety.finalize_reply(

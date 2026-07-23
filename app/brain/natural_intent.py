@@ -197,6 +197,21 @@ def _parse_json(text: str) -> dict | None:
         return None
 
 
+# Only these shapes can carry an action worth a model call. Plain conversation
+# ("kaise ho", "good morning", "haan") must never pay model latency.
+_ACTION_SIGNAL = re.compile(
+    r"@\w+|\b(?:ko|se)\s+(?:bolo|bhej|message|batao|keh|puch|tell|send|inform)|"
+    r"\b(?:message|bhej|bolo|batao|keh\s*do|inform|tell|send|remind|yaad|"
+    r"schedule|relay|forward)\b", re.I)
+
+
+def _worth_a_model_call(message: str) -> bool:
+    msg = (message or "").strip()
+    if len(msg) < 12:          # "hi", "ok", "haan" — never an order
+        return False
+    return bool(_ACTION_SIGNAL.search(msg))
+
+
 def read(message: str, *, is_guardian: bool = False) -> dict:
     """Understand the message. Rules first, light model to fill gaps. Never
     raises; unclear → chitchat so the normal conversation path handles it."""
@@ -210,6 +225,12 @@ def read(message: str, *, is_guardian: bool = False) -> dict:
         if det and det["confidence"] >= 0.8:
             return det
         emo, intensity = _detect_emotion(message)
+        # SPEED: only spend a model call when there is an actual action signal.
+        # Calling the light model on every "kaise ho" added its full latency to
+        # every reply (and when that model is queued/down, a 20s timeout on each
+        # message). Plain chat needs no extraction — rules already answered.
+        if not _worth_a_model_call(message):
+            return det or {**base, "emotion": emo, "intensity": intensity}
         try:
             data = _parse_json(_light(f"Message:\n{(message or '')[:600]}\n\nJSON:"))
         except Exception:  # noqa: BLE001 — model down must not break understanding
