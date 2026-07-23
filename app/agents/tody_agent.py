@@ -1206,6 +1206,17 @@ def draft_reply_to_message(
             f"reply-{reason}", tier=3, source="memory_guard",
             sample=reply[:200], conversation_id=conversation_id,
             person=person, guardian=is_guardian, fix_class="config")
+    # VOICE: if they asked to HEAR it ("voice me bolo", "bol ke sunao"), send a
+    # voice note alongside the text. Fired in the background and never awaited —
+    # a slow or dead TTS service must never delay (or block) the actual reply.
+    try:
+        from app.brain import voice as _voice
+        if _voice.wants_voice(message):
+            threading.Thread(
+                target=_voice.send_voice_note, args=(conversation_id, reply),
+                name=f"tody-voice-{conversation_id}", daemon=True).start()
+    except Exception:  # noqa: BLE001 — voice is an extra, never a blocker
+        pass
     queued = request_send(conversation_id, reply)
     dialogue_memory.mark_processed("tody", conversation_id, message_id)
     for extra_id in (extra_message_ids or []):

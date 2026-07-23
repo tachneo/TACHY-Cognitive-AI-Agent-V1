@@ -3,16 +3,10 @@
 Gives her a real voice: synthesize speech with Riva and deliver it into the
 chat as an audio attachment, so Papa can HEAR her rather than only read her.
 
-STATUS (23 Jul 2026): the plumbing is complete and TODY supports the delivery
-(upload_attachment + send_message(attachment_id=...)), but the Riva TTS NIM is
-NOT yet provisioned for this NVIDIA account — the endpoint answers:
-
-    Function 'ddacc747-...': Not found for account 'xhz0zNgG...'
-
-So this module is DISABLED by default (VOICE_ENABLED=false) and is UNVERIFIED
-end-to-end. Enable the chatterbox-multilingual-tts NIM (or set the correct
-VOICE_FUNCTION_ID), flip VOICE_ENABLED=true, and speak() will work — the code
-path itself is exercised by tests with the gRPC layer stubbed.
+STATUS (23 Jul 2026): WORKING. The documented chatterbox-multilingual-tts NIM
+is not provisioned for this NVIDIA account, but ai-magpie-tts-multilingual IS
+(function 877104f7-...), and it speaks both English and Hindi — verified live
+at ~1s per utterance. Voice "Magpie-Multilingual" is the only voice it exposes.
 
 Design notes:
   - Synthesis happens off the reply path. A voice note is an EXTRA, never a
@@ -59,6 +53,16 @@ def _auth():
          ["authorization", f"Bearer {s.voice_api_key}"]])
 
 
+_DEVANAGARI = re.compile(r"[ऀ-ॿ]")
+
+
+def pick_language(text: str) -> str:
+    """Magpie is multilingual, so match the language she actually wrote in.
+    Devanagari → hi-IN; romanised Hinglish and English both read best as
+    en-US (hi-IN mangles latin-script Hinglish)."""
+    return "hi-IN" if _DEVANAGARI.search(text or "") else "en-US"
+
+
 def synthesize(text: str, *, voice: str | None = None) -> str | None:
     """Synthesize speech → path to a .wav, or None on any failure. Never raises:
     a broken voice service must never break a reply."""
@@ -72,7 +76,7 @@ def synthesize(text: str, *, voice: str | None = None) -> str | None:
         import riva.client
         tts = riva.client.SpeechSynthesisService(_auth())
         resp = tts.synthesize(clean, voice_name=(voice or s.voice_name),
-                              language_code=s.voice_language,
+                              language_code=pick_language(clean),
                               sample_rate_hz=_SAMPLE_RATE)
         audio = getattr(resp, "audio", None)
         if not audio:

@@ -171,13 +171,33 @@ def test_awareness_kill_switch(monkeypatch):
 
 # ── voice (Riva TTS → TODY voice note) ───────────────────────────
 
-def test_voice_is_off_by_default_and_fails_safe():
-    # The TTS NIM is not provisioned for the account yet, so voice must be a
-    # no-op that can never block or break a reply.
+def test_voice_disabled_fails_safe(monkeypatch):
+    # With voice off it must be a pure no-op — never blocking or raising.
+    monkeypatch.setenv("VOICE_ENABLED", "false")
+    from app.config import get_settings
+    get_settings.cache_clear()
     from app.brain import voice
     assert voice.synthesize("kuch bhi") is None
     assert voice.wants_voice("voice me bolo") is False
     assert voice.send_voice_note(135, "hi")["sent"] is False
+
+
+def test_voice_language_follows_the_script_she_wrote():
+    # Magpie is multilingual: Devanagari -> hi-IN, romanised Hinglish -> en-US
+    # (hi-IN mangles latin-script Hinglish).
+    from app.brain import voice
+    assert voice.pick_language("नमस्ते पापा") == "hi-IN"
+    assert voice.pick_language("Haan Papa main theek hoon") == "en-US"
+
+
+def test_voice_survives_a_dead_tts_service(monkeypatch):
+    # A broken/slow TTS must never break or delay a reply.
+    monkeypatch.setenv("VOICE_ENABLED", "true")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    from app.brain import voice
+    monkeypatch.setattr(voice, "_auth", lambda: (_ for _ in ()).throw(RuntimeError("tts down")))
+    assert voice.synthesize("kuch bhi") is None
 
 
 def test_voice_text_is_cleaned_for_speech():
