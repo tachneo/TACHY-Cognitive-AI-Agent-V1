@@ -82,6 +82,11 @@ _RX_INSTRUCTION_BODY = re.compile(
     r"\b(?:koshish|kosisi|janne|jaan\s*ne|pata\s*(?:karo|lagao)|find\s*out|"
     r"puch\s*(?:kar|lo|na)|malum\s*karo|dekho\s+ki|check\s*karo)\b", re.I)
 # "message karke bolo" / "sabko bolo" without explicit names
+# "voice me bolo", "audio bhejo", "bol ke sunao" — a request to SPEAK to me,
+# never an instruction to message a third party.
+_RX_VOICE_REQUEST = re.compile(
+    r"\b(?:voice|audio|awaaz|awaz|sunao|sunaao|bol\s*ke\s*suna|bolkar\s*suna|"
+    r"speak|record)\b", re.I)
 _RX_TELL_VAGUE = re.compile(
     r"\b(?:message\s*kar(?:ke)?|bolo|bhejo|bhej\s*do|inform|tell\s+them)\b", re.I)
 # Someone asking HER to pass something to the guardian.
@@ -158,8 +163,13 @@ def deterministic(message: str, *, is_guardian: bool) -> dict | None:
                     "emotion": emo, "intensity": intensity,
                     "urgency": "high" if emo in ("angry", "frustrated") else "normal",
                     "confidence": 0.9 if body else 0.6, "source": "rules"}
-    # "message karke bolo" with no names → needs clarification, but it IS an order.
-    if is_guardian and _RX_TELL_VAGUE.search(msg) and not _RX_QUESTION.search(msg):
+    # "message karke bolo" with no names → needs clarification, but it IS an
+    # order. NOT a voice request: "voice me bolo" / "audio bhejo" means "say it
+    # to ME out loud", not "tell someone" — that misfire made her answer
+    # "Kisko bhejun, Papa?" when he simply asked her to speak (23 Jul).
+    if is_guardian and _RX_TELL_VAGUE.search(msg) \
+            and not _RX_VOICE_REQUEST.search(msg) \
+            and not _RX_QUESTION.search(msg):
         return {"kind": "order", "action": "send_message", "targets": [],
                 "body": "", "emotion": emo, "intensity": intensity,
                 "urgency": "normal", "confidence": 0.45, "source": "rules"}

@@ -1211,7 +1211,12 @@ def draft_reply_to_message(
     # a slow or dead TTS service must never delay (or block) the actual reply.
     try:
         from app.brain import voice as _voice
-        if _voice.wants_voice(message):
+        # Reply in voice when he ASKED for voice, or when he SPOKE to her —
+        # if Papa sends a voice note, answering in voice is what a person does.
+        _spoke_to_her = any(
+            str((a or {}).get("mime_type") or "").startswith("audio")
+            for a in (attachments or []))
+        if _voice.wants_voice(message) or _spoke_to_her:
             threading.Thread(
                 target=_voice.send_voice_note, args=(conversation_id, reply),
                 name=f"tody-voice-{conversation_id}", daemon=True).start()

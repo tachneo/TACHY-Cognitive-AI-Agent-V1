@@ -258,6 +258,20 @@ def _latest_unprocessed_message(conversation_id: int, data: dict | list) -> dict
         if message_id is None or dialogue_memory.was_processed(
                 "tody", conversation_id, message_id):
             continue
+        # HEARING: a voice note arrives with an EMPTY body. Transcribe it so she
+        # actually knows what was said — she used to answer audio generically
+        # ("Achcha, toh ab kya mood hai") to a question she never heard.
+        if not body:
+            try:
+                from app.brain import voice as _voice
+                _aurl = _voice.audio_url_from(row)
+                if _aurl:
+                    _heard = _voice.transcribe(_aurl)
+                    body = (_heard or
+                            "[Papa ne voice message bheja hai par main use sun "
+                            "nahi payi — likh ke bata do?]")
+            except Exception:  # noqa: BLE001 — deafness must not drop the message
+                pass
         if attachment:
             attachment = dict(attachment)
             attachment.setdefault("source_message_id", message_id)

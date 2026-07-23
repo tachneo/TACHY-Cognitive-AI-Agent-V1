@@ -217,6 +217,11 @@ class Settings(BaseSettings):
     voice_api_key: str = ""
     voice_name: str = "Chatterbox-Multilingual.en-US.Female"
     voice_language: str = "en-US"
+    # Hearing (ASR): inbound voice notes -> text. parakeet multilingual
+    # handles Hindi + Hinglish (verified on a real voice note, 1.3s).
+    voice_hearing_enabled: bool = True
+    voice_asr_function_id: str = "71203149-d3b7-4460-8231-1be2543a1fca"
+    voice_asr_language: str = "hi-IN"
 
     # Natural-language understanding (Phase 3F) — read what a human MEANT
     # (task/command/order/relay + emotion) instead of requiring rigid command

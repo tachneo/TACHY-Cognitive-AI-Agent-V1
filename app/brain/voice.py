@@ -54,12 +54,47 @@ def _auth():
 
 
 _DEVANAGARI = re.compile(r"[ऀ-ॿ]")
+# Hindi words that mark a line as Hinglish rather than plain English.
+_HINGLISH_MARKERS = re.compile(
+    r"\b(?:main|mai|hoon|hu|hai|hain|nahi|nahin|kya|kaise|kaisi|aap|tum|papa|"
+    r"acha|accha|theek|thik|bilkul|karo|karna|kar|raha|rahi|rahe|ho|gaya|"
+    r"gayi|bhi|toh|to\b|se|ko|ka|ki|ke|mera|meri|tumhara|aur|par|abhi|baat|"
+    r"batao|bolo|haan|han|ji|yaar|dekho|chalo|sab|kuch|bahut|thoda)\b", re.I)
+
+_TRANSLITERATE_SYSTEM = (
+    "Convert the given romanised Hindi/Hinglish into Devanagari script so it "
+    "can be read aloud naturally by a Hindi speaker. Keep genuinely English "
+    "words in Latin script (names, technical terms). Do not translate, do not "
+    "explain, do not add anything. Reply with ONLY the converted text."
+)
+
+
+def is_hinglish(text: str) -> bool:
+    t = text or ""
+    return bool(_DEVANAGARI.search(t)) or len(_HINGLISH_MARKERS.findall(t)) >= 2
+
+
+def to_devanagari(text: str) -> str | None:
+    """Romanised Hinglish → Devanagari, so the Hindi voice pronounces it like an
+    Indian speaker instead of an English one. Magpie reads latin-script Hinglish
+    badly (it swallowed a third of the audio in testing), and there is only one
+    voice available — so the SCRIPT is the only lever we have on accent.
+    Returns None on any failure; the caller then falls back to en-US."""
+    t = (text or "").strip()
+    if not t or _DEVANAGARI.search(t):
+        return t or None
+    try:
+        from app.llm.provider import get_light_provider
+        out = (get_light_provider().complete(_TRANSLITERATE_SYSTEM, t,
+                                             max_tokens=400) or "").strip()
+        # Trust it only if it actually produced Devanagari.
+        return out if out and _DEVANAGARI.search(out) else None
+    except Exception:  # noqa: BLE001 — never let this break the voice note
+        return None
 
 
 def pick_language(text: str) -> str:
-    """Magpie is multilingual, so match the language she actually wrote in.
-    Devanagari → hi-IN; romanised Hinglish and English both read best as
-    en-US (hi-IN mangles latin-script Hinglish)."""
+    """Devanagari reads as Hindi; anything else falls back to en-US."""
     return "hi-IN" if _DEVANAGARI.search(text or "") else "en-US"
 
 
@@ -72,6 +107,13 @@ def synthesize(text: str, *, voice: str | None = None) -> str | None:
     clean = speakable(text)
     if not clean:
         return None
+    # Speak Hinglish in an INDIAN voice: convert to Devanagari first so the
+    # Hindi model pronounces it natively. Without this she reads Hinglish with
+    # an English accent, which is what Rohit heard on the first voice note.
+    if is_hinglish(clean):
+        deva = to_devanagari(clean)
+        if deva:
+            clean = deva
     try:
         import riva.client
         tts = riva.client.SpeechSynthesisService(_auth())
@@ -126,6 +168,79 @@ def send_voice_note(conversation_id: int, text: str) -> dict:
             Path(path).unlink(missing_ok=True)
         except Exception:  # noqa: BLE001
             pass
+
+
+# ── Hearing (ASR): transcribe an inbound voice note ──────────────
+
+
+def transcribe(audio_url: str, *, language: str | None = None) -> str | None:
+    """Inbound voice note → text, so she can actually HEAR Papa.
+
+    Before this she received audio messages with an empty body and answered
+    generically ("Achcha, toh ab kya mood hai") to a question she never heard —
+    Rohit had asked "तुम मेरा आवाज़ पहचान सकती हो". Uses the multilingual
+    parakeet model, which handles Hindi and Hinglish. Returns None on any
+    failure; the caller then tells him honestly that she couldn't hear it.
+    """
+    s = get_settings()
+    if not s.voice_hearing_enabled or not audio_url:
+        return None
+    import subprocess
+    import tempfile
+    m4a = wav = None
+    try:
+        import httpx
+        raw = httpx.get(audio_url, timeout=30).content
+        if not raw:
+            return None
+        m4a = tempfile.mktemp(suffix=".audio")
+        with open(m4a, "wb") as f:
+            f.write(raw)
+        wav = tempfile.mktemp(suffix=".wav")
+        # Riva wants 16k mono PCM; TODY sends m4a/opus from phones.
+        proc = subprocess.run(
+            ["ffmpeg", "-y", "-i", m4a, "-ar", "16000", "-ac", "1", "-f", "wav", wav],
+            capture_output=True, timeout=60)
+        if proc.returncode != 0 or not Path(wav).exists():
+            return None
+        import riva.client
+        auth = riva.client.Auth(
+            None, True, s.voice_server,
+            [["function-id", s.voice_asr_function_id],
+             ["authorization", f"Bearer {s.voice_api_key}"]])
+        cfg = riva.client.RecognitionConfig(
+            language_code=(language or s.voice_asr_language),
+            max_alternatives=1, enable_automatic_punctuation=True)
+        with open(wav, "rb") as f:
+            resp = riva.client.ASRService(auth).offline_recognize(f.read(), cfg)
+        text = " ".join(r.alternatives[0].transcript
+                        for r in resp.results if r.alternatives).strip()
+        if text:
+            log_event_safe("voice_transcribed", risk_tier="low",
+                           detail=f"chars={len(text)}")
+        return text or None
+    except Exception as exc:  # noqa: BLE001 — deafness must never break a reply
+        log_event_safe("voice_transcribe_failed", risk_tier="low",
+                       detail=f"{type(exc).__name__}: {str(exc)[:100]}")
+        return None
+    finally:
+        for p in (m4a, wav):
+            try:
+                if p:
+                    Path(p).unlink(missing_ok=True)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def audio_url_from(row: dict) -> str | None:
+    """Pull a playable audio URL out of a TODY message row, if it has one."""
+    att = (row or {}).get("attachment") or {}
+    mime = str(att.get("mime_type") or "")
+    if not att.get("url"):
+        return None
+    if mime.startswith("audio") or str(row.get("message_type")) == "audio":
+        return str(att["url"])
+    return None
 
 
 # "voice me bolo" / "audio bhejo" / "bol ke sunao" / "speak it"

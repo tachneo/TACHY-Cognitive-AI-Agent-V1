@@ -215,3 +215,40 @@ def test_voice_command_detected_when_enabled(monkeypatch):
     assert voice.wants_voice("voice me bolo na") is True
     assert voice.wants_voice("bol ke sunao") is True
     assert voice.wants_voice("kaise ho") is False
+
+
+def test_voice_request_is_not_a_messaging_order():
+    # "voice me bolo" made her answer "Kisko bhejun, Papa?" — the word "bolo"
+    # was read as "tell someone" (23 Jul). It means "say it to ME".
+    for m in ("voice me bolo", "audio bhejo", "bol ke sunao"):
+        assert ni.read(m, is_guardian=True)["action"] == "none", m
+    # a genuine order must still work
+    assert ni.read("niva ko bolo ki aa jao", is_guardian=True)["action"] == "send_message"
+
+
+def test_hinglish_is_spoken_in_hindi_script():
+    # Magpie reads latin-script Hinglish with an English accent (and swallowed
+    # a third of the audio). Hinglish must be transliterated to Devanagari so
+    # the Hindi voice pronounces it natively.
+    from app.brain import voice
+    assert voice.is_hinglish("Haan Papa main bilkul theek hoon") is True
+    assert voice.is_hinglish("The deployment finished successfully") is False
+    assert voice.pick_language("हाँ पापा") == "hi-IN"
+
+
+def test_audio_url_detection():
+    from app.brain import voice
+    assert voice.audio_url_from(
+        {"message_type": "audio",
+         "attachment": {"url": "https://x/a.m4a", "mime_type": "audio/mp4"}})
+    assert voice.audio_url_from(
+        {"message_type": "text",
+         "attachment": {"url": "https://x/a.png", "mime_type": "image/png"}}) is None
+
+
+def test_hearing_disabled_is_safe(monkeypatch):
+    monkeypatch.setenv("VOICE_HEARING_ENABLED", "false")
+    from app.config import get_settings
+    get_settings.cache_clear()
+    from app.brain import voice
+    assert voice.transcribe("https://x/a.m4a") is None
