@@ -20,6 +20,11 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()  # create tables on first run (SQLite dev / fresh DB)
+    try:  # build the semantic-recall FTS index + live-sync triggers (idempotent)
+        from app.memory import recall_index
+        recall_index.ensure_index()
+    except Exception:  # noqa: BLE001 — recall is an enhancement, never a blocker
+        pass
     yield
 
 

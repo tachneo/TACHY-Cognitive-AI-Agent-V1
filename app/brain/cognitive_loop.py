@@ -444,6 +444,16 @@ def _draft_reply(message: str, band: str, decision: dict,
     # (Hindi in roman letters + English). Detect it and instruct Shree to
     # reply in the same register so she doesn't flip to English mid-chat.
     lang_block = _language_directive(message)
+    # SEMANTIC RECALL: her most relevant memories out of 12k+, on EVERY message.
+    # This is what lets her remember her own past instead of forgetting it —
+    # the general fix for the whole "she seems to be lying / doesn't remember"
+    # class. Fail-safe: empty string if the index is down or nothing matches.
+    recall_block = ""
+    try:
+        from app.memory import recall_index
+        recall_block = recall_index.recall_block(message, person=related_person)
+    except Exception:  # noqa: BLE001 — recall must never break a reply
+        pass
     prompt = (
         now_block
         + state_block
@@ -452,6 +462,7 @@ def _draft_reply(message: str, band: str, decision: dict,
         + context_block
         + self_block
         + people_block
+        + recall_block
         + f"User message ({band} attention): {message}\n\n"
         f"Project: {decision['project']} | Action: {decision['action']} | "
         f"Risk: {decision['risk_tier']} | Approval needed: {decision['requires_approval']}\n"

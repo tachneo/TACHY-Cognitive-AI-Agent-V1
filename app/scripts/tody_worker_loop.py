@@ -335,6 +335,14 @@ def maybe_run_self_heal(*, dry_run: bool) -> dict:
 
 
 def main() -> int:
+    # Build the semantic-recall FTS index + live-sync triggers so memories the
+    # worker creates are searchable, and so recall works even if the API process
+    # never started. Idempotent; a failure here must not stop the worker.
+    try:
+        from app.memory import recall_index
+        recall_index.ensure_index()
+    except Exception:  # noqa: BLE001
+        pass
     parser = argparse.ArgumentParser(description="TODY supervised worker loop")
     parser.add_argument("--live", action="store_true",
                         help="Process one message per tick instead of dry-run")

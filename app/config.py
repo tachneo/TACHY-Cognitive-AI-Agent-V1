@@ -239,6 +239,10 @@ class Settings(BaseSettings):
     # list, not fragments — so she can never blindly deny a real chat (she
     # denied @khadim despite 214 messages, which read as a lie).
     social_ledger_enabled: bool = True
+    # Semantic recall (FTS5): find the RIGHT memory out of 12k+, injected into
+    # every reply — so she stops forgetting her own past. The general fix for
+    # the whole "she seems to be lying / doesn't remember" class.
+    semantic_recall_enabled: bool = True
 
     # Repair queue (Phase 3A, metacognitive loop) — evidence-tiered accumulator
     # of her own failure signatures (guardian corrections > conversational
