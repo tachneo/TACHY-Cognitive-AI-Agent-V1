@@ -411,6 +411,14 @@ def _draft_reply(message: str, band: str, decision: dict,
     if self_model.is_self_question(message):
         self_block = self_model.self_knowledge_prompt() + "\n" + self_model.self_model_prompt_block(message)
     people_block = world_model.people_context_block(message)
+    # When he asks WHO she talks to (or about a specific @person), give her the
+    # real roster from the live TODY API so she answers from ground truth
+    # instead of blindly under-reporting (the @khadim "lie", 25 Jul).
+    try:
+        from app.brain import social_ledger
+        people_block += social_ledger.prompt_block(message)
+    except Exception:  # noqa: BLE001 — never let the ledger break a reply
+        pass
     emotion_block = ""
     if emotion and emotion.get("enabled") and emotion.get("top_emotions"):
         active = ", ".join(

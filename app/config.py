@@ -235,6 +235,10 @@ class Settings(BaseSettings):
     # Social awareness: stop autonomous broadcasting after N unanswered msgs.
     social_awareness_enabled: bool = True
     social_silence_threshold: int = 2
+    # Social ledger: answer "who have you talked to?" from her REAL conversation
+    # list, not fragments — so she can never blindly deny a real chat (she
+    # denied @khadim despite 214 messages, which read as a lie).
+    social_ledger_enabled: bool = True
 
     # Repair queue (Phase 3A, metacognitive loop) — evidence-tiered accumulator
     # of her own failure signatures (guardian corrections > conversational
