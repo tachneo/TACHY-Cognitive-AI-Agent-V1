@@ -20,6 +20,7 @@ from app.agents import (
     tody_conversation_ledger,
     tody_event_log,
     tody_social_actions,
+    tody_task_actions,
 )
 from app.brain import behavior_engine
 from app.brain import correction_memory
@@ -509,6 +510,89 @@ def _handle_social_action(social: dict) -> str:
     return "Ye action samajh nahi payi — like/reply/star/post me se bolo?"
 
 
+def _handle_task_action(task: dict) -> str:
+    """Execute or approval-gate explicit TODY task-management commands."""
+    from app.brain import action_engine
+
+    action = task["action"]
+    settings = get_settings()
+    if not settings.tody_tasks_enabled:
+        return (
+            "TODY task module installed hai, par abhi disabled hai. "
+            "Enable karne ke liye TODY_TASKS_ENABLED=true set karna hoga."
+        )
+    if action == "list":
+        res = tody_task_actions.do_list_tasks()
+        if not res.get("ok"):
+            return f"TODY tasks nahi dekh payi: {res.get('reason')}"
+        tasks = res.get("tasks") or []
+        if not tasks:
+            return "Abhi meri TODY task list empty hai, Papa."
+        lines = ["Meri latest TODY tasks:"]
+        for row in tasks[:8]:
+            title = str(row.get("title") or "(untitled)")[:70]
+            status = row.get("status") or "unknown"
+            tid = row.get("id") or row.get("task_id")
+            lines.append(f"- #{tid}: {title} [{status}]")
+        return "\n".join(lines)
+
+    if action == "create":
+        try:
+            normalized = tody_task_actions.prepare_create_payload(task)
+        except ValueError as exc:
+            return f"Task nahi bana sakti: {exc}"
+        if settings.tody_task_autonomous_create:
+            res = tody_task_actions.do_create_task(normalized)
+            if res.get("ok"):
+                task_row = res.get("task") or {}
+                task_id = task_row.get("id") or task_row.get("task_id")
+                warning = f"\nNote: {res['watcher_warning']}" if res.get("watcher_warning") else ""
+                return f"TODY task bana diya #{task_id}: {res['title']}{warning}"
+            return f"TODY task nahi ban paya: {res.get('reason')}"
+        proposal = action_engine.propose("tody_create_task", normalized)
+        aid = proposal["approval"]["id"]
+        warn = f"\nNote: {normalized['watcher_warning']}" if normalized.get("watcher_warning") else ""
+        return (
+            f"Ready to create TODY task: {normalized['title']}\n"
+            f"Priority: {normalized['priority']}; group_id: {normalized.get('group_id') or 'personal'}"
+            f"{warn}\nReply 'approve {aid}' to create, 'reject {aid}' to cancel."
+        )
+
+    if action == "comment":
+        payload = {"task_id": task["task_id"], "body": task["body"]}
+        if settings.tody_task_autonomous_create:
+            res = tody_task_actions.do_comment_task(task["task_id"], task["body"])
+            return ("Task comment add kar diya."
+                    if res.get("ok") else f"Task comment nahi add hua: {res.get('reason')}")
+        proposal = action_engine.propose("tody_task_comment", payload)
+        aid = proposal["approval"]["id"]
+        return (
+            f"Ready to comment on TODY task #{task['task_id']}:\n"
+            f"“{task['body']}”\nReply 'approve {aid}' to add it, 'reject {aid}' to cancel."
+        )
+
+    if action == "status":
+        payload = {
+            "task_id": task["task_id"],
+            "status": task["status"],
+            "notes": task.get("notes"),
+        }
+        if settings.tody_task_autonomous_create:
+            res = tody_task_actions.do_update_status(
+                task["task_id"], task["status"], task.get("notes"),
+            )
+            return (f"Task #{task['task_id']} status {task['status']} kar diya."
+                    if res.get("ok") else f"Task status update nahi hua: {res.get('reason')}")
+        proposal = action_engine.propose("tody_task_status", payload)
+        aid = proposal["approval"]["id"]
+        return (
+            f"Ready to mark TODY task #{task['task_id']} as {task['status']}.\n"
+            f"Reply 'approve {aid}' to update, 'reject {aid}' to cancel."
+        )
+
+    return "Task action samajh nahi payi — create/comment/status/list bolo."
+
+
 def _guardian_command_reply(message: str) -> str | None:
     """Deterministic guardian chat commands — controlled automation from TODY:
     'pending' lists approvals, 'approve 12' / 'reject 12' resolves them.
@@ -665,6 +749,13 @@ def _guardian_command_reply(message: str) -> str | None:
     social = tody_social_actions.parse_command(message)
     if social:
         return _handle_social_action(social)
+
+    # TODY task management: explicit task commands only. This uses chat-tachy's
+    # normal user APIs and keeps Rohit attached as a participant for group tasks
+    # when TODY_TASK_ROHIT_USER_ID is configured.
+    task = tody_task_actions.parse_command(message)
+    if task:
+        return _handle_task_action(task)
 
     # Directed messaging: "send message to @arjun: call me" (Phase 2A).
     # In autonomous mode Rohit's instruction IS the authorization → send now.

@@ -303,6 +303,39 @@ class TodyClient:
     def create_post(self, body: str) -> dict:
         return self._post("/v1/posts/create.php", {"body": body})
 
+    def create_task(self, *, title: str, description: str | None = None,
+                    deadline: str | None = None, priority: str = "medium",
+                    group_id: int | None = None,
+                    assignee_ids: list[int] | None = None) -> dict:
+        payload: dict = {"title": title, "priority": priority}
+        if description:
+            payload["description"] = description
+        if deadline:
+            payload["deadline"] = deadline
+        if group_id is not None and group_id > 0:
+            payload["group_id"] = int(group_id)
+        if assignee_ids:
+            payload["assignee_ids"] = [int(x) for x in assignee_ids]
+        return self._post("/v1/groups/tasks/create.php", payload)
+
+    def my_tasks(self, group_id: int | None = None) -> dict:
+        params = {"group_id": int(group_id)} if group_id is not None and group_id > 0 else None
+        return self._get("/v1/groups/tasks/my_tasks.php", params)
+
+    def update_task_status(self, task_id: int, status: str,
+                           notes: str | None = None) -> dict:
+        payload = {"task_id": int(task_id), "status": status}
+        if notes:
+            payload["notes"] = notes
+        return self._post("/v1/groups/tasks/update_status.php", payload)
+
+    def comment_task(self, task_id: int, body: str,
+                     attachment_id: int | None = None) -> dict:
+        payload = {"task_id": int(task_id), "body": body}
+        if attachment_id is not None:
+            payload["attachment_id"] = int(attachment_id)
+        return self._post("/v1/groups/tasks/comment.php", payload)
+
 
 _client: TodyClient | None = None
 

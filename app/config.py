@@ -134,6 +134,18 @@ class Settings(BaseSettings):
     tody_native_typing_preview: str = ""
     tody_presence_heartbeat_enabled: bool = True
 
+    # TODY task-management grant (Phase 0 CEO-power foundation). Shree may use
+    # the same normal-user task APIs as chat.tody.in, never admin DB writes.
+    # Creation/status/comment actions are still approval-gated unless
+    # TODY_TASK_AUTONOMOUS_CREATE is deliberately enabled for verified guardian
+    # commands. chat-tachy has no watcher table yet, so Rohit is added as a task
+    # assignee/participant for group tasks when his numeric user id is set.
+    tody_tasks_enabled: bool = False
+    tody_task_autonomous_create: bool = False
+    tody_task_default_group_id: int = 0
+    tody_task_rohit_user_id: int = 0
+    tody_task_force_rohit_watcher: bool = True
+
     # Behavior engine (Phase 1Q) — human conversation layer.
     behavior_engine_enabled: bool = True
 

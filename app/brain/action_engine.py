@@ -92,6 +92,26 @@ def _run_tody_post(params: dict) -> dict:
     return tody_social_actions.do_post(str(params["body"]))
 
 
+def _run_tody_create_task(params: dict) -> dict:
+    from app.agents import tody_task_actions
+    return tody_task_actions.do_create_task(params)
+
+
+def _run_tody_task_comment(params: dict) -> dict:
+    from app.agents import tody_task_actions
+    return tody_task_actions.do_comment_task(
+        int(params["task_id"]), str(params["body"]),
+    )
+
+
+def _run_tody_task_status(params: dict) -> dict:
+    from app.agents import tody_task_actions
+    return tody_task_actions.do_update_status(
+        int(params["task_id"]), str(params["status"]),
+        str(params.get("notes") or "") or None,
+    )
+
+
 REGISTRY: dict[str, ActionSpec] = {
     spec.name: spec for spec in (
         ActionSpec("learn_topic", "low",
@@ -122,6 +142,15 @@ REGISTRY: dict[str, ActionSpec] = {
         ActionSpec("tody_post", "high",
                    "Create a public TODY post/status (approval-gated)",
                    _run_tody_post),
+        ActionSpec("tody_create_task", "high",
+                   "Create a TODY task through the normal-user task API",
+                   _run_tody_create_task),
+        ActionSpec("tody_task_comment", "high",
+                   "Comment on a TODY task through the normal-user task API",
+                   _run_tody_task_comment),
+        ActionSpec("tody_task_status", "high",
+                   "Update a TODY task status through the normal-user task API",
+                   _run_tody_task_status),
     )
 }
 

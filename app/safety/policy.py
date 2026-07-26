@@ -31,6 +31,9 @@ HIGH_RISK_ACTIONS = {
     "disable_security", "run_shell_command",
     # Outbound TODY actions (Phase 1D) — public/social side effects.
     "create_post",
+    # TODY task-management side effects: create/comment/status changes can
+    # notify people or alter shared work state, so they need guardian control.
+    "tody_create_task", "tody_task_comment", "tody_task_status",
 }
 
 FORBIDDEN_ACTIONS = {
