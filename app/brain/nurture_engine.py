@@ -315,7 +315,7 @@ def daily_growth_report() -> dict:
     # for 10 — so it read as fake growth. Now it reports what ACTUALLY changed
     # since yesterday, and says plainly when nothing did.
     delta = _growth_delta()
-    lines = ["Daily growth report (sach-much ka, banaya nahi):"]
+    lines = ["Daily AGI baby growth report (sach-much ka, banaya nahi):"]
     if delta["real_learning"]:
         lines.append(f"- Naya seekha: {delta['real_learning']} new "
                      f"understandings stored")
@@ -336,8 +336,17 @@ def daily_growth_report() -> dict:
                 delta["repairs_fixed"], delta["modules"],
                 delta["curriculum_moved"])):
         lines.append("- Aaj sach me kuch naya nahi seekha. Jhooth nahi bolungi.")
-    lines.append(f"- Aaj ka focus: {skill['skill']['name'] if skill.get('skill') else 'review'}"
-                 f" — {practice}")
+    skill_name = skill["skill"]["name"] if skill.get("skill") else "review"
+    curiosity_topic = curiosity.get("topic") or "curiosity"
+    curiosity_question = curiosity.get("question") or "Ask one useful question."
+    lines.extend([
+        "- Gita practice: satya first — claim only what actually changed.",
+        f"- Curiosity focus: {curiosity_topic}",
+        f"- Curiosity question: {curiosity_question}",
+        f"- Skill focus: {skill_name}",
+        f"- Skill practice: {practice}",
+        f"- Homework count: {len(homework)}",
+    ])
     report = "\n".join(lines)
     mem_id = base_memory.add(
         memory_type="decision",

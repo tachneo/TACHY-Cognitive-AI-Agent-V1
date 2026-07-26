@@ -26,8 +26,11 @@ was verified, and what must happen next.
 ./.venv/bin/pytest -q tests/test_tody_truth_grounding.py tests/test_tody_ai_event_log.py tests/test_phase1w_capability_honesty.py tests/test_phase1s_human_chat_feel.py -p no:cacheprovider
 33 passed in 18.20s
 
+./.venv/bin/pytest -q tests/test_tody_truth_grounding.py tests/test_phase3g_social_ledger.py tests/test_phase3h_semantic_recall.py tests/test_tody_ai_event_log.py tests/test_phase1s_human_chat_feel.py -p no:cacheprovider
+43 passed in 34.66s
+
 ./.venv/bin/pytest -q -p no:cacheprovider
-691 passed in 383.83s (0:06:23)
+744 passed in 329.35s (0:05:29)
 ```
 
 ### Next

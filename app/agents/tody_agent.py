@@ -1168,13 +1168,21 @@ def draft_reply_to_message(
     _already_acted = bool(brain.get("guardian_command"))
     if (not _already_acted) and behavior_engine.claims_false_send(reply) \
             and _is_third_party_send(reply, message, intent):
-        # SOFTEN, never replace. Replacing the whole answer with a template was
-        # its own failure: on 20 Jul Rohit said "ye tumhare andar bug hai" and
-        # got this canned line 4x instead of an answer, then stopped talking for
-        # 3 days. Her real reply must survive; we only append the honest caveat.
-        reply = reply.rstrip() + (
-            "\n\n(Ek baat saaf kar doon — abhi tak maine kisi ko kuch bheja "
-            "nahi hai. Bolo to bhej doon.)")
+        if intent == "third_party_action":
+            reply = (
+                "Papa, abhi maine kisi ko message nahi bheja. Agar tum chahte "
+                "ho ki main TODY par kisi ko message karun, exact format bolo: "
+                "'send message to @username: your text'. Main phir approval ke "
+                "saath hi bhejungi."
+            )
+        else:
+            # SOFTEN non-action answers, do not replace. Replacing the whole
+            # answer with a template was its own failure: on 20 Jul Rohit said
+            # "ye tumhare andar bug hai" and got a canned line instead of an
+            # answer. Her real reply survives; only the false action is caveated.
+            reply = reply.rstrip() + (
+                "\n\n(Ek baat saaf kar doon — abhi tak maine kisi ko kuch bheja "
+                "nahi hai. Bolo to bhej doon.)")
         log_event("false_action_softened",
                   detail=f"conversation_id={conversation_id}", risk_tier="low")
     # F6 — verify before claiming: if Shree states a completed verification
