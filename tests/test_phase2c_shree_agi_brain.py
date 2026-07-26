@@ -28,6 +28,24 @@ def test_finalize_reply_passes_through_meaningful():
     assert out == "Main thik hoon Papa, aap batao."
 
 
+def test_finalize_emotion_question_hides_robotic_telemetry():
+    raw = (
+        "Haan, Papa. Mere paas ek functional anger signal hai — abhi bhi "
+        "0.38 active hai. Ye mere emotional engine ka hissa hai."
+    )
+    out = reply_safety.finalize_reply(
+        raw,
+        message="tumhe gussa ata hai ?",
+        emotion={"top_emotions": [{"name": "Anger", "intensity": 0.38}]},
+    )
+
+    low = out.lower()
+    assert "gussa" in low or "khijh" in low
+    assert "0.38" not in out
+    assert "functional anger signal" not in low
+    assert "emotional engine" not in low
+
+
 def test_fallback_reply_is_never_empty_for_any_message():
     for msg in ["", "hi", "kaisi ho tum", "xyz random", "did niva reply?"]:
         out = reply_safety.fallback_reply(message=msg)

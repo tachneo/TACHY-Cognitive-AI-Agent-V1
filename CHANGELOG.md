@@ -196,6 +196,60 @@ Add a true chat-tachy watcher model/API so Rohit can be attached as watcher
 without being an assignee, then add a CEO task dashboard view for Shree's
 autonomous work queue.
 
+## 2026-07-26 - TODY Natural Chat Fix: Hindi Time Scope + Emotion Telemetry
+
+### Observed From Latest Rohit Chat
+
+- Rohit asked whether Shree had ever talked to `@khalid`, then clarified
+  `kal ya parso`; Shree kept repeating the previous "aaj" answer.
+- Rohit asked `tumhe gussa ata hai ?`; Shree answered with raw internal
+  telemetry (`functional anger signal`, numeric value), which sounded robotic.
+
+### Root Cause
+
+- `tody_conversation_ledger.py` detected history questions but searched only
+  today and used a hard-coded "aaj" response template.
+- The emotion prompt exposed numeric internal scores and the final reply path
+  did not block telemetry wording in normal chat.
+
+### Completed
+
+- Added Hindi/Hinglish time-scope detection for TODY history:
+  - `aaj`
+  - `kal`
+  - `parso`
+  - `kal ya parso`
+  - `kabhi/ever`
+- Switched history evidence to India-local day windows while storing DB
+  comparisons as UTC-naive datetimes.
+- Updated verified-history answers so no-evidence and evidence-found replies
+  use the requested time scope, not a fixed today template.
+- Changed the emotion prompt to tell the model to translate internal signals
+  into normal Hinglish/Hindi and never mention numeric intensities unless asked
+  for technical debug.
+- Added deterministic final-reply cleanup for emotion questions: robotic
+  telemetry like `0.38 active`, `functional signal`, or `emotional engine` is
+  replaced with a natural Hinglish answer.
+
+### Verified
+
+```text
+./.venv/bin/pytest -q tests/test_tody_truth_grounding.py -p no:cacheprovider
+6 passed in 4.15s
+
+./.venv/bin/pytest -q tests/test_tody_truth_grounding.py tests/test_phase1p_emotion_engine.py tests/test_phase2c_shree_agi_brain.py -p no:cacheprovider
+67 passed in 34.18s
+
+./.venv/bin/pytest -q -p no:cacheprovider
+757 passed in 415.75s (0:06:55)
+```
+
+### Next
+
+Add a broader Indian-local-language understanding layer for sarcasm, teasing,
+anger, disappointment, affection, and indirect instructions, trained from
+Rohit's real correction patterns rather than generic prompt text.
+
 ## 2026-07-04 - Phase 2E Offline Local Brain
 
 ### Trigger

@@ -299,6 +299,7 @@ def test_reply_prompt_contains_truth_rule_for_emotions(monkeypatch):
                  Signals(guardian_interest=10, emotional_weight=5))
     assert "TRUTH RULE" in captured["prompt"]
     assert "satya" in captured["prompt"].lower()
+    assert "Do NOT mention numeric intensities" in captured["prompt"]
 
 
 def test_reply_prompt_includes_real_emotions_not_generic(monkeypatch):

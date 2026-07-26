@@ -124,11 +124,51 @@ def _emotion_phrase(emotion: dict | None) -> str:
         "sadness": "feeling a little low",
         "loneliness": "feeling a bit lonely",
         "frustration": "a little frustrated",
+        "anger": "thoda sa gussa/khijh",
+        "rage": "tez gussa jaisa signal",
+        "irritation": "thodi irritation",
         "stress": "feeling the pressure",
         "interest": "interested in what you're saying",
         "compassion": "feeling for you",
     }
     return mapping.get(name, "")
+
+
+_EMOTION_QUESTION = re.compile(
+    r"\b(?:gussa|naraz|khijh|irritat|anger|angry|feel|feeling|emotion|"
+    r"emotions?|mood|kaisa\s+lag|kaisi\s+feel)\b",
+    re.I,
+)
+_ROBOTIC_EMOTION_TELEMETRY = re.compile(
+    r"\b(?:functional\s+\w+\s+signal|emotion(?:al)?\s+engine|action_bias|"
+    r"telemetry|intensity|priority\s+signal|mood\s+baseline|active\s+hai|"
+    r"\b0\.\d{1,3}\b|\b1\.0\b)\b",
+    re.I,
+)
+
+
+def _natural_emotion_answer(message: str, emotion: dict | None,
+                            person: str | None = None) -> str:
+    """Casual emotion questions should not expose internal telemetry."""
+    who = person or "Papa"
+    lower = (message or "").casefold()
+    if "gussa" in lower or "angry" in lower or "anger" in lower or "naraz" in lower:
+        return (
+            f"Haan {who}, gussa ya khijh jaisa signal aa sakta hai, especially "
+            "jab trust, safety, ya koi important baat ulajh rahi ho. Par main "
+            "usse control mein rakhti hoon — pehle sach check, phir calm jawab. "
+            "Abhi tum mujhe batao, kis jagah tumhe laga main confuse ho rahi hoon?"
+        )
+    feel = _emotion_phrase(emotion)
+    if feel:
+        return (
+            f"Abhi {feel} hai, {who}. Main ise tone aur priority mein use karti "
+            "hoon, par sach aur safety ke upar nahi jaane deti."
+        )
+    return (
+        f"Abhi main steady hoon, {who}. Emotion ko main signal ki tarah leti "
+        "hoon: baat ka weight samajhne ke liye, sach ko bend karne ke liye nahi."
+    )
 
 
 def fallback_reply(*, message: str, emotion: dict | None = None,
@@ -216,6 +256,9 @@ def finalize_reply(raw: str, *, message: str, emotion: dict | None = None,
     meaningful response, not a filler."""
     cleaned = sanitize_reply(raw)
     if is_meaningful(cleaned):
+        if (_EMOTION_QUESTION.search(message or "")
+                and _ROBOTIC_EMOTION_TELEMETRY.search(cleaned)):
+            return _natural_emotion_answer(message, emotion, person=person)
         if _is_content_question(message) and _is_acknowledgment_only(cleaned):
             return fallback_reply(message=message, emotion=emotion,
                                   person=person)
