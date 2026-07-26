@@ -4,6 +4,37 @@ This file is the durable project memory for human/developer handoff. Update it
 after every phase so the next session can see what exists, what changed, what
 was verified, and what must happen next.
 
+## 2026-07-26 - TODY Truth Grounding + Natural Correction: Phase 2
+
+### Completed
+
+- Added `app/agents/tody_conversation_ledger.py`, a verified recall layer over
+  sanitized TODY event logs for questions like "did you talk to Niva today?"
+- Wired guardian TODY replies to answer cross-conversation history questions
+  from the ledger before calling the LLM, preventing current-chat-only guesses.
+- Added a conflict rewrite guard so false denials about past TODY conversations
+  are replaced with evidence-backed answers when ledger evidence exists.
+- Updated mobile chat style guidance: when corrected, Shree should admit the
+  mistake once, avoid defensive "I am not lying" loops, name verified evidence,
+  and move to the next small fix naturally.
+- Added regression tests for Niva-style cross-chat recall, conflict rewriting,
+  and LLM bypass for verified history answers.
+
+### Verified
+
+```text
+./.venv/bin/pytest -q tests/test_tody_truth_grounding.py tests/test_tody_ai_event_log.py tests/test_phase1w_capability_honesty.py tests/test_phase1s_human_chat_feel.py -p no:cacheprovider
+33 passed in 18.20s
+
+./.venv/bin/pytest -q -p no:cacheprovider
+691 passed in 383.83s (0:06:23)
+```
+
+### Next
+
+Add ASR for TODY audio notes and a daily TODY QA report that turns repeated
+ledger conflicts into repair intentions automatically.
+
 ## 2026-07-17 - TODY AGI Chat Production Hardening: Phase 1
 
 ### Completed

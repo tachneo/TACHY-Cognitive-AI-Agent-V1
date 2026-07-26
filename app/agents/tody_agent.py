@@ -14,7 +14,13 @@ import random
 import threading
 import time
 
-from app.agents import chat_tool_loop, social_policy, tody_event_log, tody_social_actions
+from app.agents import (
+    chat_tool_loop,
+    social_policy,
+    tody_conversation_ledger,
+    tody_event_log,
+    tody_social_actions,
+)
 from app.brain import behavior_engine
 from app.brain import correction_memory
 from app.brain import autonomous_tasks
@@ -964,8 +970,15 @@ def draft_reply_to_message(
         # on this thread could wrongly suppress storing a clean deterministic
         # reply. The process() path resets again inside; harmless.
         _reset_generation()
+        history_reply = (
+            tody_conversation_ledger.verified_history_answer(
+                message, current_conversation_id=conversation_id)
+            if is_guardian else None
+        )
         if command_reply is not None:
             brain = {"reply": command_reply, "guardian_command": True}
+        elif history_reply is not None:
+            brain = {"reply": history_reply, "tody_history_verified": True}
         elif social["action"] == "throttle":
             # Hit the daily cap for this stranger — stop replying (anti-loop).
             dialogue_memory.mark_processed("tody", conversation_id, message_id)
@@ -1169,6 +1182,8 @@ def draft_reply_to_message(
     # the tool this turn. If not, soften to an honest "let me verify" instead
     # of letting an unverified claim reach Papa (satya).
     reply = _verify_before_claim(reply, brain)
+    reply = tody_conversation_ledger.rewrite_conflicting_history_claim(
+        reply, message, current_conversation_id=conversation_id)
     dialogue_memory.remember_turn(
         channel="tody",
         conversation_id=conversation_id,
