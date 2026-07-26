@@ -174,7 +174,12 @@ def _parse_ids(value: str | list | tuple | None) -> list[int]:
 
 
 def prepare_create_payload(params: dict) -> dict:
-    """Normalize and enforce the Rohit participant rule before execution."""
+    """Normalize a task payload before proposal or execution.
+
+    This function is deterministic and does not call the network so approval
+    previews stay fast and hermetic. The execution path may add Rohit's user id
+    via the normal-user search API when the numeric env value is absent.
+    """
     settings = get_settings()
     title = _clean_text(params.get("title"), 180)
     if not title:
@@ -211,10 +216,54 @@ def prepare_create_payload(params: dict) -> dict:
     }
 
 
+def _resolve_guardian_user_id() -> int | None:
+    settings = get_settings()
+    configured = int(settings.tody_task_rohit_user_id or 0)
+    if configured > 0:
+        return configured
+    username = (settings.guardian_tody_username or "").strip().lstrip("@")
+    if not username:
+        return None
+    try:
+        data = get_client()._post("/v1/contacts/search_username.php", {"username": username})
+    except TodyError:
+        return None
+    user = data.get("user") if isinstance(data, dict) else None
+    return _parse_int(user.get("id") if isinstance(user, dict) else None)
+
+
+def _enforce_guardian_participant_for_execution(payload: dict) -> dict:
+    """Add Rohit as a group-task assignee when possible.
+
+    This is a safety invariant, not an LLM choice. It may strengthen the
+    approved payload by adding the guardian participant; it never removes
+    assignees or changes title/body/content.
+    """
+    settings = get_settings()
+    out = dict(payload)
+    if not settings.tody_task_force_rohit_watcher or not out.get("group_id"):
+        return out
+    rohit_id = _resolve_guardian_user_id()
+    if not rohit_id:
+        out["watcher_warning"] = (
+            "Rohit user id could not be resolved; task created without auto-watch."
+        )
+        return out
+    assignee_ids = list(out.get("assignee_ids") or [])
+    if rohit_id not in assignee_ids:
+        assignee_ids.append(rohit_id)
+    out["assignee_ids"] = assignee_ids
+    out["watcher_mode"] = "assignee_until_chat_tachy_watcher_api_exists"
+    out["watcher_warning"] = None
+    return out
+
+
 def do_create_task(params: dict) -> dict:
     if not get_settings().tody_tasks_enabled:
         return {"ok": False, "reason": "TODY task actions are disabled"}
-    payload = prepare_create_payload(params)
+    payload = _enforce_guardian_participant_for_execution(
+        prepare_create_payload(params),
+    )
     try:
         created = get_client().create_task(
             title=payload["title"],

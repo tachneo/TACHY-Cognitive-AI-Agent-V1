@@ -28,7 +28,9 @@ above all outward actions.
 - task comments
 - task status updates
 - Rohit participant enforcement for group tasks when
-  `TODY_TASK_ROHIT_USER_ID` is configured
+  `TODY_TASK_ROHIT_USER_ID` is configured, or when Rohit's numeric user id can
+  be resolved from `GUARDIAN_TODY_USERNAME` through TODY's normal contact search
+  endpoint during execution
 - safe warnings when Rohit cannot be attached because the task is personal or
   his numeric TODY user id is not configured
 
@@ -70,7 +72,7 @@ after Rohit's explicit command.
 ```text
 TODY_TASKS_ENABLED=true
 TODY_TASK_DEFAULT_GROUP_ID=<shared TODY group id>
-TODY_TASK_ROHIT_USER_ID=<Rohit's numeric global_users.id>
+TODY_TASK_ROHIT_USER_ID=<Rohit's numeric global_users.id, optional if username search works>
 TODY_TASK_FORCE_ROHIT_WATCHER=true
 TODY_TASK_AUTONOMOUS_CREATE=false
 ```

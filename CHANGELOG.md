@@ -163,6 +163,9 @@ controlled workers.
   - `TODY_TASK_DEFAULT_GROUP_ID`
   - `TODY_TASK_ROHIT_USER_ID`
   - `TODY_TASK_FORCE_ROHIT_WATCHER`
+- Added a normal-user contact-search fallback so Rohit's numeric user id can be
+  resolved from `GUARDIAN_TODY_USERNAME` during task execution when the direct
+  env value is not set.
 - Documented the live watcher gap: chat-tachy has creator/assignee visibility,
   but no watcher table/API yet. Until Phase 1 backend work adds true watchers,
   Rohit is attached as a group-task assignee/participant when configured.
@@ -181,10 +184,10 @@ controlled workers.
 
 ```text
 ./.venv/bin/pytest -q tests/test_tody_task_actions.py tests/test_phase3c_chat_fixes.py tests/test_phase1d.py -p no:cacheprovider
-33 passed in 21.14s
+34 passed in 10.52s
 
 ./.venv/bin/pytest -q -p no:cacheprovider
-753 passed in 292.44s (0:04:52)
+754 passed in 303.88s (0:05:03)
 ```
 
 ### Next

@@ -103,7 +103,8 @@ TODY tasks, comment on tasks, and update task status through the normal
 chat.tody.in user APIs, with explicit command parsing and approval-gated
 execution by default. Since chat-tachy currently has no task watcher API, Rohit
 is added as a group-task assignee/participant when
-`TODY_TASK_ROHIT_USER_ID` and `TODY_TASK_DEFAULT_GROUP_ID` are configured.
+`TODY_TASK_DEFAULT_GROUP_ID` is configured and Rohit's id is either configured
+with `TODY_TASK_ROHIT_USER_ID` or resolvable from `GUARDIAN_TODY_USERNAME`.
 Microblog posting remains available through the existing high-risk `tody_post`
 action and does not bypass approval.
 

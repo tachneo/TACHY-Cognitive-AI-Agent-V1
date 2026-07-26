@@ -100,6 +100,36 @@ def test_create_task_uses_normal_user_api_payload(monkeypatch):
     }]
 
 
+def test_create_task_resolves_rohit_id_when_env_missing(monkeypatch):
+    monkeypatch.setenv("TODY_TASKS_ENABLED", "true")
+    monkeypatch.setenv("TODY_TASK_DEFAULT_GROUP_ID", "9")
+    monkeypatch.setenv("TODY_TASK_ROHIT_USER_ID", "0")
+    monkeypatch.setenv("GUARDIAN_TODY_USERNAME", "rohitsingh")
+    _clear_settings()
+
+    from app.agents import tody_task_actions as tasks
+
+    calls = []
+
+    class FakeClient:
+        def _post(self, path, payload):
+            assert path == "/v1/contacts/search_username.php"
+            assert payload == {"username": "rohitsingh"}
+            return {"user": {"id": 4, "username": "rohitsingh"}}
+
+        def create_task(self, **payload):
+            calls.append(payload)
+            return {"task": {"id": 78, "title": payload["title"]}}
+
+    monkeypatch.setattr(tasks, "get_client", lambda: FakeClient())
+    out = tasks.do_create_task({"title": "Prepare investor notes"})
+
+    assert out["ok"] is True
+    assert calls[0]["assignee_ids"] == [4]
+    assert out["watcher_mode"] == "assignee_until_chat_tachy_watcher_api_exists"
+    assert out["watcher_warning"] is None
+
+
 def test_tody_task_action_registered_as_high_risk():
     from app.brain import action_engine
 
