@@ -13,6 +13,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from app.brain import language_grammar
 from app.db.models import TodyAIEventLog, session_scope
 
 
@@ -34,10 +35,11 @@ _FALSE_DENIAL = re.compile(
 )
 _NAME_RE = re.compile(
     r"@([a-zA-Z0-9_.-]{2,40})|"
-    r"(?:with|to|se|ko|से|को)\s+([A-Z][a-zA-Z0-9_.-]{1,40}|[a-zA-Z0-9_.-]{2,40})|"
+    r"\b(?:with|to|se|ko|से|को)\b\s+([A-Z][a-zA-Z0-9_.-]{1,40}|[a-zA-Z0-9_.-]{2,40})|"
     r"\b(niva|neha|komal|rohit|papa)\b",
     re.I,
 )
+_NAME_STOP = {"me", "you", "tum", "aap", "papa", "baat", "chat", "message", "msg"}
 
 
 def _utc_day_bounds(now: dt.datetime | None = None) -> tuple[dt.datetime, dt.datetime]:
@@ -134,27 +136,54 @@ def _event_blob(row: TodyAIEventLog) -> str:
     return " ".join(bits).casefold()
 
 
-def extract_person_name(question: str) -> str | None:
+def _recent_texts_for_conversation(conversation_id: int | None, *, limit: int = 20) -> list[str]:
+    if conversation_id is None:
+        return []
+    with session_scope() as s:
+        rows = list(s.scalars(
+            select(TodyAIEventLog.body_preview)
+            .where(TodyAIEventLog.conversation_id == conversation_id)
+            .order_by(TodyAIEventLog.created_at.desc())
+            .limit(limit)
+        ))
+    return [text or "" for text in reversed(rows)]
+
+
+def extract_person_name(question: str, *, current_conversation_id: int | None = None) -> str | None:
     """Extract the likely person being asked about from a TODY recall question."""
     text = question or ""
     matches = [m for m in _NAME_RE.finditer(text)]
     if not matches:
-        return None
+        return language_grammar.resolve_recent_person(
+            text,
+            _recent_texts_for_conversation(current_conversation_id),
+        )
     for match in matches:
         value = next((g for g in match.groups() if g), "")
-        if value and value.casefold() not in {"me", "you", "tum", "aap", "papa"}:
+        if value and value.casefold() not in _NAME_STOP:
             return value.strip("@ .,:;!?")
     value = next((g for g in matches[-1].groups() if g), "")
-    return value.strip("@ .,:;!?") if value else None
+    if value:
+        return value.strip("@ .,:;!?")
+    return language_grammar.resolve_recent_person(
+        text,
+        _recent_texts_for_conversation(current_conversation_id),
+    )
 
 
-def looks_like_tody_history_question(question: str) -> bool:
+def looks_like_tody_history_question(
+    question: str,
+    *,
+    current_conversation_id: int | None = None,
+) -> bool:
     lower = (question or "").casefold()
     if not any(word in lower for word in _CHAT_WORDS):
         return False
     if any(word in lower for word in (*_TODAY_WORDS, *_EVER_WORDS, *_YESTERDAY_WORDS, *_DAY_BEFORE_WORDS)):
         return True
-    return bool(extract_person_name(question)) and any(
+    return bool(extract_person_name(
+        question, current_conversation_id=current_conversation_id,
+    )) and any(
         cue in lower for cue in (
             "tumne", "did you", "have you", "kiya", "किया", "jhoot",
             "झूठ", "check karo", "records", "bataya",
@@ -241,9 +270,12 @@ def verified_history_answer(
     now: dt.datetime | None = None,
 ) -> str | None:
     """Natural deterministic answer for cross-chat TODY history questions."""
-    if not looks_like_tody_history_question(question):
+    if not looks_like_tody_history_question(
+        question, current_conversation_id=current_conversation_id,
+    ):
         return None
-    person = extract_person_name(question)
+    person = extract_person_name(
+        question, current_conversation_id=current_conversation_id)
     if not person:
         return None
     scope = _scope_from_question(question)

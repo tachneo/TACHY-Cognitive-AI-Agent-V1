@@ -39,6 +39,19 @@ def test_task_parser_does_not_convert_plain_work_into_task():
     assert tasks.parse_command("please check production and guide me") is None
 
 
+def test_task_parser_understands_natural_testing_task_banao():
+    from app.agents import tody_task_actions as tasks
+
+    out = tasks.parse_command(
+        "maine new features add kiya hai tujhme, ab tum tody app pe new task "
+        "bana sakti ho, check karo, koi testing task banao"
+    )
+
+    assert out["action"] == "create"
+    assert out["title"] == "Test Shree's TODY task creation feature"
+    assert out["priority"] == "low"
+
+
 def test_prepare_create_forces_rohit_participant_for_group_task(monkeypatch):
     monkeypatch.setenv("TODY_TASK_DEFAULT_GROUP_ID", "91")
     monkeypatch.setenv("TODY_TASK_ROHIT_USER_ID", "11")

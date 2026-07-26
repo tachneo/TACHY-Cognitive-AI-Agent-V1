@@ -96,6 +96,32 @@ def test_verified_history_answer_respects_kal_parso_scope():
     assert "aaj khalid" not in answer.lower()
 
 
+def test_verified_history_resolves_usse_from_recent_thread_target():
+    from app.agents import tody_conversation_ledger as ledger
+    from app.db.models import session_scope
+
+    now = dt.datetime(2026, 7, 26, 13, 0, 0)
+    with session_scope() as s:
+        s.add_all([
+            _event("message_selected_for_reply", "inbound", 135, 1,
+                   "talk to @niva", now),
+            _event("message_selected_for_reply", "inbound", 241, 2,
+                   "Hii Shree", now),
+            _event("message_send_executed", "outbound", 241, 3,
+                   "Hii Niva, kaise ho?", now),
+        ])
+
+    answer = ledger.verified_history_answer(
+        "kya tumne usse baat kiya?",
+        current_conversation_id=135,
+        now=now,
+    )
+
+    assert answer is not None
+    assert "niva" in answer.lower()
+    assert "conversation 241" in answer.lower()
+
+
 def test_conflicting_history_denial_is_rewritten():
     from app.agents import tody_conversation_ledger as ledger
     from app.db.models import session_scope

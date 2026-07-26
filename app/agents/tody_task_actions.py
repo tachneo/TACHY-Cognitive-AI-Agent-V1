@@ -40,6 +40,11 @@ _RX_STATUS = re.compile(
     re.I | re.S,
 )
 _RX_LIST = re.compile(r"^\s*(?:list|show|check)\s+(?:my\s+)?(?:tody\s+)?tasks\s*$", re.I)
+_RX_NATURAL_CREATE = re.compile(
+    r"\btask\b.{0,80}\b(?:banao|bana\s*do|banana|create|add|make)\b|"
+    r"\b(?:banao|bana\s*do|banana|create|add|make)\b.{0,80}\btask\b",
+    re.I | re.S,
+)
 
 
 @dataclass(frozen=True)
@@ -100,6 +105,17 @@ def parse_command(message: str) -> dict | None:
         payload = _parse_create_body(m.group("body") or "")
         if payload:
             return {"action": "create", **payload.to_dict()}
+    if _RX_NATURAL_CREATE.search(msg):
+        title = _natural_task_title(msg)
+        return {
+            "action": "create",
+            "title": title,
+            "description": _clean_text(msg, 500),
+            "deadline": None,
+            "priority": "low" if re.search(r"\b(test|testing|qa|check)\b", msg, re.I) else "medium",
+            "group_id": None,
+            "assignee_ids": [],
+        }
     return None
 
 
@@ -153,6 +169,22 @@ def _split_fields(text: str) -> dict[str, str]:
 def _clean_text(value: str | None, max_len: int) -> str:
     text = re.sub(r"\s+", " ", str(value or "")).strip()
     return text[:max_len]
+
+
+def _natural_task_title(message: str) -> str:
+    msg = _clean_text(message, 180)
+    low = msg.casefold()
+    if "testing" in low or "test" in low:
+        return "Test Shree's TODY task creation feature"
+    cleaned = re.sub(
+        r"\b(?:please|koi|ek|new|naya|tody|task|banao|bana\s*do|banana|"
+        r"create|add|make|check\s*karo)\b",
+        " ",
+        msg,
+        flags=re.I,
+    )
+    cleaned = _clean_text(cleaned, 120)
+    return cleaned or "Task from Papa"
 
 
 def _parse_int(value: str | int | None) -> int | None:

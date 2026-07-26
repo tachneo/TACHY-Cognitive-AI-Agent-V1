@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import re
 
+from app.brain import language_grammar
 from app.config import get_settings
 from app.safety.audit_logger import log_event_safe
 
@@ -61,7 +62,7 @@ _RX_TELL = re.compile(
     r"\s*(?:ko|to)\s+"
     # Longest forms FIRST — alternation is first-match, so "kar do" must be
     # tried before "kar", else "message kar do ki X" leaves "do ki X" as body.
-    r"(?:message\s*(?:kar\s*do|kardo|kar(?:ke)?|karo|bhej\s*do|bhejo)?|"
+    r"(?:message\s*(?:kar\s*do|kardo|karo|kar(?:ke)?|bhej\s*do|bhejo)?|"
     r"bol\s*do|bolo|bata\s*do|batao|keh\s*do|kaho|inform\s*karo|tell|send)"
     # NOT followed by a permission auxiliary: "message kar sakti ho?" means
     # "CAN you message" — a question, not "message kar[o] ki <text>". Without
@@ -101,7 +102,8 @@ _RX_ORDER = re.compile(
 _RX_QUESTION = re.compile(r"\?\s*$|^(kya|kaise|kab|kaun|kyu|kyun|what|how|why|when|who|where)\b", re.I)
 
 _STOPWORDS = {"tum", "tu", "aap", "dono", "sab", "sabko", "unko", "unhe", "me",
-              "mujhe", "you", "them", "us", "it", "that", "this", "papa", "koi"}
+              "mujhe", "you", "them", "us", "it", "that", "this", "papa",
+              "koi", "or", "aur", "and", "ya"}
 
 
 def _detect_emotion(text: str) -> tuple[str, float]:
@@ -150,7 +152,7 @@ def deterministic(message: str, *, is_guardian: bool) -> dict | None:
     m = _RX_TELL.search(msg)
     if m and is_guardian:
         targets = _clean_targets(m.group("who"))
-        body = (m.group("body") or "").strip(" :,-\n")
+        body = language_grammar.naturalize_recipient_instruction(m.group("body") or "")
         # Never paste his own instruction as the message. If he asked whether
         # she CAN message someone, or described a GOAL ("find out what they
         # do") rather than giving text, the body is unknown — she must ask,
@@ -160,6 +162,7 @@ def deterministic(message: str, *, is_guardian: bool) -> dict | None:
         if targets:
             return {"kind": "order", "action": "send_message",
                     "targets": targets, "body": body,
+                    "grammar": language_grammar.analyze(msg),
                     "emotion": emo, "intensity": intensity,
                     "urgency": "high" if emo in ("angry", "frustrated") else "normal",
                     "confidence": 0.9 if body else 0.6, "source": "rules"}
@@ -171,7 +174,8 @@ def deterministic(message: str, *, is_guardian: bool) -> dict | None:
             and not _RX_VOICE_REQUEST.search(msg) \
             and not _RX_QUESTION.search(msg):
         return {"kind": "order", "action": "send_message", "targets": [],
-                "body": "", "emotion": emo, "intensity": intensity,
+                "body": "", "grammar": language_grammar.analyze(msg),
+                "emotion": emo, "intensity": intensity,
                 "urgency": "normal", "confidence": 0.45, "source": "rules"}
     return None
 

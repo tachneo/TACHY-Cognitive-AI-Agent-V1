@@ -19,6 +19,7 @@ import json
 import re
 from pathlib import Path
 
+from app.brain import language_grammar
 from app.safety.audit_logger import log_event
 
 _STATE = Path("storage/logs/conversation_missions.json")
@@ -65,12 +66,33 @@ def parse_mission(message: str) -> dict | None:
         m = rx.match(text) or rx.search(text)
         if m:
             user = m.group(1)
-            if user.lower() in {"me", "you", "him", "her", "them", "us", "papa"}:
+            if user.lower() in {
+                "me", "you", "him", "her", "them", "us", "papa", "or", "aur",
+                "and", "ya",
+            }:
                 continue
             goal = (m.group(2) or "").strip(" :,-–\n") or \
                 "get to know them naturally and build a friendly rapport"
             return {"username": user, "goal": goal}
+    targets = language_grammar.extract_targets(text)
+    if targets and re.search(
+        r"\b(?:baat\s+kar|talk|chat|haal\s+chaal|padhai|samajh|understand)\b",
+        text, re.I,
+    ) and not re.search(r"\b(?:send|message|msg|text)\b", text, re.I):
+        goal = _goal_from_free_order(text)
+        return {"username": targets[0], "goal": goal}
     return None
+
+
+def _goal_from_free_order(text: str) -> str:
+    low = (text or "").casefold()
+    if "padhai" in low:
+        return "ask naturally how their studies are going and continue like a friend"
+    if "haal" in low and "chaal" in low:
+        return "ask naturally how they are and whether everything is okay"
+    if "samajh" in low or "understand" in low:
+        return "understand them naturally and report useful context to Rohit"
+    return "talk naturally and build a friendly rapport"
 
 
 def start(username: str, goal: str, target_conv_id, guardian_conv_id) -> dict:

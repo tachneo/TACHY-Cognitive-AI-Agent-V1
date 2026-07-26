@@ -88,6 +88,14 @@ def test_guardian_talk_to_starts_mission(monkeypatch):
     assert cm.for_conversation(241)["username"] == "niva"
 
 
+def test_hinglish_mission_target_can_appear_late():
+    r = cm.parse_mission("usse baat karo or padhai kisi chal rahi hai @niva ki ?")
+    assert r == {
+        "username": "niva",
+        "goal": "ask naturally how their studies are going and continue like a friend",
+    }
+
+
 # ── Intent disambiguation: don't forward an instruction ─────────
 
 def test_instruction_body_not_forwarded(monkeypatch):

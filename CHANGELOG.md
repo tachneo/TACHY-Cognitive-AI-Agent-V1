@@ -4,6 +4,40 @@ This file is the durable project memory for human/developer handoff. Update it
 after every phase so the next session can see what exists, what changed, what
 was verified, and what must happen next.
 
+## 2026-07-26 - TODY Indian Conversation Grammar + Continuity: Phase 3
+
+### Completed
+
+- Added `app/brain/language_grammar.py` for deterministic Hindi, Hinglish, and
+  English chat signals: language, tense, person, time scope, @targets, pronoun
+  references, and natural Indian chat instruction cleanup.
+- Fixed guardian send parsing so phrases like
+  `@niva ko message karo or usse haal chaal pucho` create a natural message
+  instead of forwarding broken instruction residue.
+- Improved conversation missions so free-order Hinglish instructions like
+  `usse baat karo ... @niva ki` resolve the correct person and goal.
+- Added natural TODY task creation detection for requests such as
+  `koi testing task banao`.
+- Added thread continuity recall: follow-up questions like
+  `kya tumne usse baat kiya?` resolve `usse` from recent TODY thread context
+  before checking the verified cross-conversation ledger.
+
+### Verified
+
+```text
+./.venv/bin/pytest -q tests/test_language_grammar.py tests/test_phase3f_human_understanding.py tests/test_phase2e_conversation_mission.py tests/test_tody_task_actions.py tests/test_tody_truth_grounding.py -p no:cacheprovider
+69 passed in 20.72s
+
+./.venv/bin/pytest -q -p no:cacheprovider
+765 passed in 335.19s (0:05:35)
+```
+
+### Next
+
+Continue collecting real TODY failures into the ledger and expand the grammar
+module with cultural pragmatics: indirect requests, teasing/sarcasm cues,
+respect forms, and relationship-aware response style.
+
 ## 2026-07-26 - TODY Truth Grounding + Natural Correction: Phase 2
 
 ### Completed

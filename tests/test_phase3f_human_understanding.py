@@ -40,6 +40,14 @@ def test_verb_forms_do_not_leak_into_body(msg, body):
     assert ni.read(msg, is_guardian=True)["body"] == body
 
 
+def test_message_karo_or_usse_is_naturalized_not_pasted():
+    r = ni.read("@niva ko message karo or usse haal chaal pucho, sab thik hai na",
+                is_guardian=True)
+    assert r["targets"] == ["niva"]
+    assert r["body"] == "Hii, kaise ho? Sab thik hai na?"
+    assert not r["body"].lower().startswith("o or")
+
+
 def test_permission_question_never_sends_guessed_text():
     # 23 Jul, the real incident: "username @tse ko message kar sakti ho ? or
     # janne ki kosisi karo ki wo kya karte hai" — she split at "kar" and mailed
